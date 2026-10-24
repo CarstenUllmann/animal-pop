@@ -36,3 +36,18 @@ export function createRng(seed: number): Rng {
 
   return { next, int, pick, shuffle }
 }
+
+/**
+ * Seed helpers kept pure so the boot's random source can be feature-detected in `main.ts`
+ * and still be tested here (issue #23). `seedFromRandom` is the fallback for engines without
+ * `crypto.getRandomValues`.
+ */
+export function seedFromCrypto(values: ArrayLike<number>): number {
+  let seed = 0
+  for (let i = 0; i < values.length; i++) seed = (seed ^ (values[i] ?? 0)) >>> 0
+  return seed
+}
+
+export function seedFromRandom(value: number): number {
+  return Math.floor(value * 0x100000000) >>> 0
+}

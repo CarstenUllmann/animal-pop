@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createRng } from './rng'
+import { createRng, seedFromCrypto, seedFromRandom } from './rng'
 
 describe('createRng', () => {
   it('produces the same sequence for the same seed', () => {
@@ -42,5 +42,19 @@ describe('createRng', () => {
     expect(shuffled).toHaveLength(input.length)
     expect([...shuffled].sort()).toEqual([...input].sort())
     expect(input).toEqual(['a', 'b', 'c', 'd', 'e'])
+  })
+})
+
+describe('seed sources', () => {
+  it('combines the crypto values it is given', () => {
+    expect(seedFromCrypto(new Uint32Array([1, 2]))).toBe(3)
+    expect(seedFromCrypto(new Uint32Array([0xffffffff, 1]))).toBe(0xfffffffe)
+  })
+
+  it('maps a Math.random value in [0, 1) into the seed range', () => {
+    expect(seedFromRandom(0)).toBe(0)
+    expect(seedFromRandom(0.5)).toBe(2147483648)
+    expect(seedFromRandom(0.75)).toBe(3221225472)
+    expect(seedFromRandom(0.9999999998)).toBeLessThan(0x100000000)
   })
 })

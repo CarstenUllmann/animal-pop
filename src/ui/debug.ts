@@ -4,8 +4,12 @@
  * platform facts and reserves labelled slots for the game values that arrive in M1/M2.
  *
  * Without the query parameter nothing is created, no listeners are added and no
- * requestAnimationFrame loop runs.
+ * requestAnimationFrame loop runs. The `boot` row shows the persisted boot trace
+ * (issue #23), which is the only thing a force-close leaves behind.
  */
+
+import { describeError, traceLines, type BootLog } from './bootlog'
+import { hasMatchMedia } from './capabilities'
 
 const DEBUG_PARAM = 'debug'
 
@@ -23,6 +27,8 @@ export interface DebugOverlay {
 export interface DebugInfo {
   seed?: number
   animals?: readonly string[]
+  /** Boot trace, the reason the overlay is worth opening on the tablet (issue #23). */
+  bootLog?: BootLog
 }
 
 type ValueKey =
@@ -37,6 +43,7 @@ type ValueKey =
   | 'online'
   | 'serviceWorker'
   | 'build'
+  | 'boot'
 
 interface RowDef {
   key: ValueKey
@@ -44,6 +51,8 @@ interface RowDef {
   initial: () => string
   /** Game values are not wired up until later milestones. */
   pending?: boolean
+  /** Multi-line rows (the boot trace) get their own styling. */
+  trace?: boolean
 }
 
 const ROWS: RowDef[] = [
@@ -62,6 +71,8 @@ const ROWS: RowDef[] = [
     label: 'build',
     initial: () => `${__APP_VERSION__} · ${__BUILD_TIME__.slice(0, 16).replace('T', ' ')}Z`,
   },
+  // The previous launch's trace is the only thing a force-close leaves behind.
+  { key: 'boot', label: 'boot trace', initial: () => '—', trace: true },
 ]
 
 export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): DebugOverlay {
@@ -81,7 +92,7 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): Debu
   for (const row of ROWS) {
     const label = element('dt', row.pending ? 'debug__label debug__label--pending' : 'debug__label', row.label)
     if (row.pending) label.title = 'Wired up in a later milestone'
-    const value = element('dd', row.pending ? 'debug__value debug__value--pending' : 'debug__value', row.initial())
+    const value = element('dd', valueClass(row), row.initial())
     values[row.key] = value
     rows.append(label, value)
   }
@@ -116,6 +127,18 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): Debu
     errorValue.title = message
   }
 
+  // The row that makes the tablet debuggable: what the previous launch persisted, then this
+  // launch's steps as they happen. A force-close ends a run, so the last error on screen is
+  // the one that survived into this launch.
+  let unsubscribeBootLog: (() => void) | null = null
+  if (info.bootLog !== undefined) {
+    const log = info.bootLog
+    setValue('boot', bootText(log))
+    const persistedError = log.previous()?.lastError
+    if (persistedError !== null && persistedError !== undefined) setLastError(persistedError)
+    unsubscribeBootLog = log.subscribe(() => setValue('boot', bootText(log)))
+  }
+
   // FPS: sampled twice a second while the overlay is mounted.
   let frames = 0
   let sampleStart = performance.now()
@@ -146,7 +169,7 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): Debu
     setLastError(event.message || 'unknown error')
   }
   const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
-    setLastError(describe(event.reason))
+    setLastError(describeError(event.reason))
   }
   const onToggle = (): void => {
     const collapsed = panel.classList.toggle('debug--collapsed')
@@ -186,6 +209,7 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): Debu
       document.removeEventListener('visibilitychange', onVisibility)
       toggle.removeEventListener('click', onToggle)
       navigator.serviceWorker?.removeEventListener('controllerchange', onServiceWorkerChange)
+      if (unsubscribeBootLog !== null) unsubscribeBootLog()
       panel.remove()
     },
   }
@@ -202,8 +226,22 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
+function valueClass(row: RowDef): string {
+  if (row.pending) return 'debug__value debug__value--pending'
+  if (row.trace) return 'debug__value debug__value--trace'
+  return 'debug__value'
+}
+
+/** Previous run then this one, as plain lines. */
+function bootText(log: BootLog): string {
+  const previous = log.previous()
+  const lines: string[] = previous === null ? [] : traceLines(previous)
+  lines.push(...traceLines(log.current()))
+  return lines.join('\n')
+}
+
 function displayMode(): string {
-  if (window.matchMedia('(display-mode: standalone)').matches) return 'standalone'
+  if (hasMatchMedia(window) && window.matchMedia('(display-mode: standalone)').matches) return 'standalone'
   if (navigator.standalone) return 'standalone'
   return 'browser'
 }
@@ -215,14 +253,4 @@ function viewportText(): string {
 function serviceWorkerStatus(): string {
   if (!('serviceWorker' in navigator)) return 'unsupported'
   return navigator.serviceWorker.controller ? 'active' : 'registering'
-}
-
-function describe(reason: unknown): string {
-  if (reason instanceof Error) return `${reason.name}: ${reason.message}`
-  if (typeof reason === 'string') return reason
-  try {
-    return JSON.stringify(reason) ?? String(reason)
-  } catch {
-    return String(reason)
-  }
 }

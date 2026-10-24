@@ -323,3 +323,49 @@ body {
 .debug--collapsed .debug__footer {
   display: none;
 }
+
+/* The boot row is a trace, so it reads as lines rather than a right-aligned value. */
+.debug__value--trace {
+  text-align: left;
+  white-space: pre-line;
+  line-height: 1.35;
+}
+
+/* Plain fallback panel — issue #23. It has to render without `?debug=1`, on a device where
+   the game itself never started, so it stays as simple as possible. */
+.fallback {
+  max-width: 26rem;
+  margin: 1.5rem auto;
+  padding: 1rem;
+  border: 1px solid rgba(123, 223, 242, 0.3);
+  border-radius: 0.4rem;
+  background: rgba(31, 43, 69, 0.94);
+  color: #eaf1ff;
+  font-size: 0.8rem;
+}
+
+.fallback__title {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  color: #f4f1ea;
+}
+
+.fallback__heading {
+  margin: 0.6rem 0 0.3rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b9bc9;
+}
+
+.fallback__line {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.fallback__hint {
+  margin-top: 0.6rem;
+  font-size: 0.62rem;
+  color: #6c7aa5;
+}

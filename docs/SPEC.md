@@ -371,6 +371,11 @@ Key: `localStorage["pop-pals.v1"]`. Written after **every resolved tap** and on 
 transition. try/catch around all storage access — if storage is unavailable the game still
 plays, it just can't resume.
 
+Separate key `localStorage["pop-pals.boot.v1"]` holds the boot trace (issue #23): the steps
+reached during startup plus the last error. It is written after every boot step, because a
+force-close on the tablet kills the process before anything renders — the only way to read the
+failure is to write it down and look at it on the next launch.
+
 ```ts
 interface SaveState {
   version: 1
@@ -401,6 +406,12 @@ interface SaveState {
 `?debug=1` shows: level, seed, animal types in play, bubbles, remaining goals, fps, last
 error message, and a "next level" button. Off by default. This is the only on-device debugging
 channel (no USB tethering guaranteed), so it must be built in M0 rather than bolted on.
+
+It also carries a `boot` row with the persisted boot trace from §14.1 — the previous run's steps
+then this run's. Since a crash can end the process before the overlay is ever mounted, boot must
+also render a plain fallback panel **without** `?debug=1` when it fails, and no startup call may
+throw: feature-detect `crypto.getRandomValues`, `matchMedia`, `Element.prototype.animate` and
+`getAnimations({ subtree: true })`, and fall back to a static board when an engine lacks them.
 
 ---
 

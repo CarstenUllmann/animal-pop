@@ -2,6 +2,7 @@ import { ANIMALS_BY_ID } from '../game/animals'
 import { colOf, rowOf } from '../game/board'
 import { GRID, MOTION } from '../game/constants'
 import type { AnimalId, Board, PopResult } from '../game/types'
+import { canAnimate, canListAnimations, hasMatchMedia } from './capabilities'
 
 export interface BoardView {
   readonly element: HTMLElement
@@ -21,11 +22,24 @@ export interface BoardViewOptions {
 }
 
 const REDUCED_MOTION =
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  hasMatchMedia(window) && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const ms = (duration: number): number => (REDUCED_MOTION ? Math.min(duration, 80) : duration)
 const stagger = (delay: number): number => (REDUCED_MOTION ? 0 : delay)
+
+/**
+ * Run one keyframe effect, or resolve at once when the engine cannot animate. The tile keeps
+ * the inline transform it is given, so the board still lands in the right place as a static
+ * grid on an engine without the Web Animations API.
+ */
+function runAnimation(
+  element: HTMLElement,
+  keyframes: Keyframe[],
+  options: KeyframeAnimationOptions,
+): Promise<unknown> {
+  if (!canAnimate(element)) return Promise.resolve()
+  return element.animate(keyframes, options).finished.catch(() => undefined)
+}
 
 export function createBoardView(options: BoardViewOptions): BoardView {
   const board = document.createElement('div')
@@ -86,17 +100,16 @@ export function createBoardView(options: BoardViewOptions): BoardView {
     if (REDUCED_MOTION || destRow === startRow) return Promise.resolve()
 
     const distance = Math.abs(destRow - startRow)
-    return tile
-      .animate(
-        [{ transform: transformAt(startRow, col) }, { transform: transformAt(destRow, col) }],
-        {
-          duration: ms(MOTION.dropDuration + distance * MOTION.dropPerRow),
-          delay: stagger(delay),
-          easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)',
-          fill: 'backwards',
-        },
-      )
-      .finished.catch(() => undefined)
+    return runAnimation(
+      tile,
+      [{ transform: transformAt(startRow, col) }, { transform: transformAt(destRow, col) }],
+      {
+        duration: ms(MOTION.dropDuration + distance * MOTION.dropPerRow),
+        delay: stagger(delay),
+        easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)',
+        fill: 'backwards',
+      },
+    )
   }
 
   async function deal(next: Board): Promise<void> {
@@ -166,18 +179,17 @@ export function createBoardView(options: BoardViewOptions): BoardView {
 
       const base = transformAt(rowOf(index), colOf(index))
       animations.push(
-        tile
-          .animate(
-            REDUCED_MOTION
-              ? [{ opacity: 1 }, { opacity: 0 }]
-              : [
-                  { transform: `${base} scale(1)`, opacity: 1, offset: 0 },
-                  { transform: `${base} scale(1.18)`, opacity: 1, offset: 0.35 },
-                  { transform: `${base} scale(0)`, opacity: 0, offset: 1 },
-                ],
-            { duration: ms(MOTION.pop), easing: 'ease-out', fill: 'forwards' },
-          )
-          .finished.catch(() => undefined),
+        runAnimation(
+          tile,
+          REDUCED_MOTION
+            ? [{ opacity: 1 }, { opacity: 0 }]
+            : [
+                { transform: `${base} scale(1)`, opacity: 1, offset: 0 },
+                { transform: `${base} scale(1.18)`, opacity: 1, offset: 0.35 },
+                { transform: `${base} scale(0)`, opacity: 0, offset: 1 },
+              ],
+          { duration: ms(MOTION.pop), easing: 'ease-out', fill: 'forwards' },
+        ),
       )
     }
 
@@ -191,28 +203,25 @@ export function createBoardView(options: BoardViewOptions): BoardView {
     if (tile === null) return
 
     if (REDUCED_MOTION) {
-      void tile
-        .animate([{ opacity: 1 }, { opacity: 0.5 }, { opacity: 1 }], {
-          duration: ms(MOTION.wobble),
-          easing: 'ease-in-out',
-        })
-        .finished.catch(() => undefined)
+      void runAnimation(tile, [{ opacity: 1 }, { opacity: 0.5 }, { opacity: 1 }], {
+        duration: ms(MOTION.wobble),
+        easing: 'ease-in-out',
+      })
       return
     }
 
     const base = transformAt(rowOf(index), colOf(index))
-    void tile
-      .animate(
-        [
-          { transform: base },
-          { transform: `${base} rotate(-6deg)` },
-          { transform: `${base} rotate(6deg)` },
-          { transform: `${base} rotate(-3deg)` },
-          { transform: base },
-        ],
-        { duration: ms(MOTION.wobble), easing: 'ease-in-out' },
-      )
-      .finished.catch(() => undefined)
+    void runAnimation(
+      tile,
+      [
+        { transform: base },
+        { transform: `${base} rotate(-6deg)` },
+        { transform: `${base} rotate(6deg)` },
+        { transform: `${base} rotate(-3deg)` },
+        { transform: base },
+      ],
+      { duration: ms(MOTION.wobble), easing: 'ease-in-out' },
+    )
   }
 
   async function animateReshuffle(next: Board): Promise<void> {
@@ -224,50 +233,46 @@ export function createBoardView(options: BoardViewOptions): BoardView {
       const col = colOf(index)
 
       if (REDUCED_MOTION) {
-        return tile
-          .animate([{ opacity: 1 }, { opacity: 0 }], {
-            duration: ms(MOTION.reshuffleScatter),
-            delay: stagger((order % 3) * 12),
-            easing: 'ease-in',
-            fill: 'forwards',
-          })
-          .finished.catch(() => undefined)
+        return runAnimation(tile, [{ opacity: 1 }, { opacity: 0 }], {
+          duration: ms(MOTION.reshuffleScatter),
+          delay: stagger((order % 3) * 12),
+          easing: 'ease-in',
+          fill: 'forwards',
+        })
       }
 
       const driftX = ((order % 5) - 2) * 24
       const driftY = -14 - (order % 4) * 18
-      return tile
-        .animate(
-          [
-            { transform: transformAt(row, col), opacity: 1 },
-            {
-              transform: `translate3d(${col * 100 + driftX}%, ${row * 100 + driftY}%, 0) scale(0.3) rotate(${driftX}deg)`,
-              opacity: 0,
-            },
-          ],
+      return runAnimation(
+        tile,
+        [
+          { transform: transformAt(row, col), opacity: 1 },
           {
-            duration: ms(MOTION.reshuffleScatter),
-            delay: stagger((order % 3) * 12),
-            easing: 'ease-in',
-            fill: 'forwards',
+            transform: `translate3d(${col * 100 + driftX}%, ${row * 100 + driftY}%, 0) scale(0.3) rotate(${driftX}deg)`,
+            opacity: 0,
           },
-        )
-        .finished.catch(() => undefined)
+        ],
+        {
+          duration: ms(MOTION.reshuffleScatter),
+          delay: stagger((order % 3) * 12),
+          easing: 'ease-in',
+          fill: 'forwards',
+        },
+      )
     })
 
     if (!REDUCED_MOTION) {
-      void board
-        .animate(
-          [
-            { transform: 'translateX(0)' },
-            { transform: 'translateX(-1.2%)' },
-            { transform: 'translateX(1.2%)' },
-            { transform: 'translateX(-0.7%)' },
-            { transform: 'translateX(0)' },
-          ],
-          { duration: ms(MOTION.reshuffleShake), easing: 'ease-in-out' },
-        )
-        .finished.catch(() => undefined)
+      void runAnimation(
+        board,
+        [
+          { transform: 'translateX(0)' },
+          { transform: 'translateX(-1.2%)' },
+          { transform: 'translateX(1.2%)' },
+          { transform: 'translateX(-0.7%)' },
+          { transform: 'translateX(0)' },
+        ],
+        { duration: ms(MOTION.reshuffleShake), easing: 'ease-in-out' },
+      )
     }
 
     await Promise.all(escapes)
@@ -286,7 +291,9 @@ export function createBoardView(options: BoardViewOptions): BoardView {
     animateReshuffle,
     destroy(): void {
       board.removeEventListener('pointerdown', handlePointerDown)
-      for (const animation of board.getAnimations({ subtree: true })) animation.cancel()
+      if (canListAnimations(board)) {
+        for (const animation of board.getAnimations({ subtree: true })) animation.cancel()
+      }
       board.remove()
     },
   }
