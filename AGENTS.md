@@ -4,6 +4,11 @@ A tap-a-cluster animal-popping game for a young child, shipped as an offline-fir
 browser PWA. The design spec is [`docs/SPEC.md`](docs/SPEC.md) — read it before changing
 game behaviour, layout, or audio.
 
+## Commands
+
+`npm install`, then `npm run dev`, `npm test`, `npm run typecheck`, `npm run build`,
+`npm run preview`. Pushing to `main` deploys to GitHub Pages.
+
 ## Agent skills
 
 ### Issue tracker

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Pop Pals">
+  <rect width="512" height="512" fill="#101426"/>
+  <circle cx="440" cy="120" r="160" fill="#7bdff2" opacity=".15"/>
+  <circle cx="40" cy="440" r="128" fill="#ff8fa3" opacity=".12"/>
+  <polygon points="123,205 148,67 230,164" fill="#f2923c"/>
+  <polygon points="389,205 364,67 282,164" fill="#f2923c"/>
+  <circle cx="256" cy="282" r="138" fill="#ffe9c9"/>
+  <ellipse cx="180" cy="322" rx="22" ry="17" fill="#ff8fa3" opacity=".45"/>
+  <ellipse cx="332" cy="322" rx="22" ry="17" fill="#ff8fa3" opacity=".45"/>
+  <ellipse cx="222" cy="290" rx="17" ry="20" fill="#2a1a12"/>
+  <ellipse cx="290" cy="290" rx="17" ry="20" fill="#2a1a12"/>
+  <polygon points="238,330 274,330 256,345" fill="#d96c7a"/>
+  <path d="M230 348a36 26 0 0 0 52 0" fill="none" stroke="#2a1a12" stroke-width="7" stroke-linecap="round"/>
+  <g stroke="#e2b184" stroke-width="6" stroke-linecap="round">
+    <path d="M102 295 148 303"/>
+    <path d="M102 333 148 329"/>
+    <path d="M410 295 364 303"/>
+    <path d="M410 333 364 329"/>
+  </g>
+</svg>

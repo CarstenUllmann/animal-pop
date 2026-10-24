@@ -1,0 +1,21 @@
+{
+  "name": "animal-pop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A tap-a-cluster animal-popping game, shipped as an offline-first PWA.",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.5"
+  }
+}
