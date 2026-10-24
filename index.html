@@ -19,8 +19,60 @@
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
   </head>
   <body>
+    <!--
+      Launch probe — SPEC §14.1, issue #23. A classic script in ES5, so it parses on any engine, and it
+      runs before the module is requested. That is the only way to tell the three outcomes apart on the
+      tablet: the page never loaded in the installed app, the page loaded but the module did not run, or
+      our own code threw. What it writes is proof the page parsed; what it prints is the only evidence a
+      module that never parses could leave. The game removes this line when it starts.
+    -->
+    <div id="probe" class="probe"></div>
     <div id="app"></div>
     <noscript>Pop Pals needs JavaScript.</noscript>
+    <script>
+      (function () {
+        var KEY = 'pop-pals.probe.v1'
+        var MAX = 12
+        var store = typeof localStorage === 'object' ? localStorage : null
+
+        var engine = 'engine unknown'
+        var match = /Chrome\/(\d+)/.exec(navigator.userAgent || '')
+        if (match) engine = 'engine Chrome/' + match[1]
+
+        var mode = 'browser'
+        if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) mode = 'standalone'
+        else if (navigator.standalone) mode = 'standalone'
+
+        var raw = ''
+        if (store) {
+          try {
+            raw = store.getItem(KEY) || ''
+          } catch (error) {
+            store = null
+          }
+        }
+
+        var line = new Date().toISOString() + ' ' + engine + ' ' + mode
+        var wrote = false
+        if (store) {
+          var lines = raw ? raw.split('\n') : []
+          lines.push(line)
+          while (lines.length > MAX) lines.shift()
+          try {
+            store.setItem(KEY, lines.join('\n'))
+            wrote = true
+          } catch (error) {
+            store = null
+          }
+        }
+
+        var probe = document.getElementById('probe')
+        if (probe) {
+          probe.textContent =
+            line + ' ' + (wrote ? 'wrote' : 'cannot write') + ' — page parsed, module not yet run'
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
