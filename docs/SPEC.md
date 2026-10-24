@@ -408,10 +408,16 @@ error message, and a "next level" button. Off by default. This is the only on-de
 channel (no USB tethering guaranteed), so it must be built in M0 rather than bolted on.
 
 It also carries a `boot` row with the persisted boot trace from §14.1 — the previous run's steps
-then this run's. Since a crash can end the process before the overlay is ever mounted, boot must
-also render a plain fallback panel **without** `?debug=1` when it fails, and no startup call may
-throw: feature-detect `crypto.getRandomValues`, `matchMedia`, `Element.prototype.animate` and
+then this run's, starting with the engine version token and the feature-detected APIs it found.
+Since a crash can end the process before the overlay is ever mounted, boot must also render a
+plain fallback panel **without** `?debug=1` when it fails, and no startup call may throw:
+feature-detect `crypto.getRandomValues`, `matchMedia`, `Element.prototype.animate` and
 `getAnimations({ subtree: true })`, and fall back to a static board when an engine lacks them.
+
+The browser and the installed app share one Chrome profile, so a standalone crash is observable
+from the browser: launch the app, let it die, then open `?debug=1` in the browser and read the
+`boot` row. That is the only way to see a standalone run without a screen, a console or adb
+(issue #23).
 
 ---
 

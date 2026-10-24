@@ -50,3 +50,32 @@ export function canAnimate(target: unknown): target is Element & Animatable {
 export function canListAnimations(target: unknown): target is Element & ListAnimations {
   return hasMethod(target, 'getAnimations')
 }
+
+/** The four guards read together, as the names the engine actually provides. */
+export interface EngineSnapshot {
+  crypto: unknown
+  window: unknown
+  element: unknown
+}
+
+export function capabilityFlags(snapshot: EngineSnapshot): string[] {
+  const flags: string[] = []
+  if (hasRandomValues(snapshot.crypto)) flags.push('getRandomValues')
+  if (hasMatchMedia(snapshot.window)) flags.push('matchMedia')
+  if (canAnimate(snapshot.element)) flags.push('animate')
+  if (canListAnimations(snapshot.element)) flags.push('getAnimations')
+  return flags
+}
+
+/**
+ * The engine that booted this run, as its Chrome version token.
+ *
+ * The browser and the installed app report different numbers here, because standalone uses the
+ * System WebView rather than the browser build. Since the trace is persisted and Chrome uses one
+ * profile for both, reading the trace from the browser tells us which engine the crashed run ran
+ * in (issue #23).
+ */
+export function engineToken(userAgent: string): string {
+  const match = /Chrome\/(\d+)/.exec(userAgent)
+  return match === null ? 'unknown engine' : `Chrome/${match[1]}`
+}

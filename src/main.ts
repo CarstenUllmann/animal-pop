@@ -6,7 +6,7 @@ import { M1_ANIMAL_TYPES, MAX_QUEUED_TAPS } from './game/constants'
 import { createRng, seedFromCrypto, seedFromRandom } from './game/rng'
 import { createBootLog, describeError } from './ui/bootlog'
 import { createBoardView } from './ui/boardView'
-import { hasRandomValues } from './ui/capabilities'
+import { capabilityFlags, engineToken, hasRandomValues } from './ui/capabilities'
 import { mountDebugOverlay, parseDebugFlag } from './ui/debug'
 import { renderFallback } from './ui/fallback'
 import { installKidProofing } from './ui/shell'
@@ -24,6 +24,19 @@ const log = createBootLog()
 
 log.step('boot')
 log.step(log.storageAvailable() ? 'storage ok' : 'storage unavailable')
+
+// Recorded first, because these are the only facts a force-close leaves behind that can be read
+// without a screen: Chrome uses one profile for both the browser and the installed app, so the
+// browser's `?debug=1` boot row shows the standalone run's trace (issue #23). The engine token is
+// how we tell the two apart — standalone gets the System WebView, not the browser build.
+log.step(`engine ${engineToken(navigator.userAgent)}`)
+log.step(
+  `capabilities: ${capabilityFlags({
+    crypto: globalThis.crypto,
+    window,
+    element: document.createElement('div'),
+  }).join(', ') || 'none'}`,
+)
 
 const app = document.querySelector<HTMLElement>('#app')
 if (app === null) {

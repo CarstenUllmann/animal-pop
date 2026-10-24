@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { canAnimate, canListAnimations, hasMatchMedia, hasRandomValues } from './capabilities'
+import {
+  canAnimate,
+  canListAnimations,
+  capabilityFlags,
+  engineToken,
+  hasMatchMedia,
+  hasRandomValues,
+} from './capabilities'
 
 describe('hasRandomValues', () => {
   it('accepts an object with getRandomValues', () => {
@@ -45,5 +52,40 @@ describe('canListAnimations', () => {
   it('rejects an element that cannot', () => {
     expect(canListAnimations({})).toBe(false)
     expect(canListAnimations(undefined)).toBe(false)
+  })
+})
+
+describe('capabilityFlags', () => {
+  it('names the APIs the engine provides', () => {
+    const snapshot = {
+      crypto: { getRandomValues: (array: unknown) => array },
+      window: { matchMedia: (query: string) => ({ matches: query.length > 0 }) },
+      element: { animate: () => undefined, getAnimations: () => [] },
+    }
+    expect(capabilityFlags(snapshot)).toEqual([
+      'getRandomValues',
+      'matchMedia',
+      'animate',
+      'getAnimations',
+    ])
+  })
+
+  it('names nothing for an engine without them', () => {
+    expect(capabilityFlags({ crypto: undefined, window: {}, element: {} })).toEqual([])
+  })
+})
+
+describe('engineToken', () => {
+  it('reports the Chrome version token, which differs between browser and WebView', () => {
+    const browser =
+      'Mozilla/5.0 (Linux; Android 8.1.0; Pixel C) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
+    const webView =
+      'Mozilla/5.0 (Linux; Android 8.1.0; Pixel C) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Mobile Safari/537.36'
+    expect(engineToken(browser)).toBe('Chrome/137')
+    expect(engineToken(webView)).toBe('Chrome/109')
+  })
+
+  it('says unknown when there is no Chrome token to read', () => {
+    expect(engineToken('Mozilla/5.0 (compatible; SomeBrowser/12.0)')).toBe('unknown engine')
   })
 })
