@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+dist-ssr/
+*.local
+
+# editor / local machine settings
+.vscode/
+.idea/
+
+# logs and caches
+*.log
+npm-debug.log*
+.vite/
+coverage/
+
+# test / tooling artifacts
+*.tsbuildinfo
+test-results/
+playwright-report/
+
+# os
+.DS_Store
+Thumbs.db
