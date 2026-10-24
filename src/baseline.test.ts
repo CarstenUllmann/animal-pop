@@ -28,6 +28,7 @@ function shippedSources(dir: string, found: string[] = []): string[] {
 /** APIs newer than Chrome 61 that the build target cannot transpile. */
 const TOO_NEW: Record<string, number> = {
   globalThis: 71,
+  allSettled: 76,
   'flatMap(': 69,
   '.flat(': 69,
   '.at(': 92,
@@ -54,5 +55,12 @@ describe('engine baseline', () => {
   it('targets the engine the installed app runs in, not the browser', () => {
     const config = readFileSync(join(SRC, '..', 'vite.config.ts'), 'utf8')
     expect(config).toContain("const CHROME_TARGET = 'chrome61'")
+  })
+
+  it('builds the worker as a plain script, which that engine can register', () => {
+    const config = readFileSync(join(SRC, '..', 'vite.config.ts'), 'utf8')
+    expect(config).toContain("strategies: 'injectManifest'")
+    expect(config).toContain("filename: 'sw.ts'")
+    expect(config).toContain("rollupFormat: 'iife'")
   })
 })

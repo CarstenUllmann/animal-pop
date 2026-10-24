@@ -55,12 +55,18 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        // Precache the whole app: after install there are zero runtime requests.
-        // The manifest and its icons are added automatically by vite-plugin-pwa.
-        globPatterns: ['**/*.{js,css,html,svg}'],
-        navigateFallback: 'index.html',
-        cleanupOutdatedCaches: true,
+      // Workbox's own runtime cannot install on the tablet's engine (SPEC §2), so the worker is
+      // hand-written in src/sw.ts and this plugin only supplies the list of files to precache.
+      strategies: 'injectManifest',
+      // srcDir and filename are what pick the worker source: the plugin builds them as its entry.
+      srcDir: 'src',
+      filename: 'sw.ts',
+      injectManifest: {
+        // The whole app plus the manifest and its icons: after install there are zero runtime requests.
+        globPatterns: ['**/*.{js,css,html,svg,png}'],
+        // The plugin defaults to a module worker, which the tablet's engine cannot register. As a plain
+        // script it registers fine there.
+        rollupFormat: 'iife',
       },
     }),
   ],

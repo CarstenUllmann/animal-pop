@@ -39,10 +39,13 @@ Chrome on Android 8.1 is frozen at **Chrome 138** — no further updates. Theref
   `Animation.finished` (75) — cannot be transpiled, so they are feature-detected at runtime and the
   board falls back to the static grid (SPEC §14.3). CSS newer than Chrome 61 (`aspect-ratio`,
   `clamp()`, flex `gap`) degrades cosmetically only.
-- **Known gap, offline caching:** Workbox 7.4.0 parses on Chrome 61, but its install handler calls
-  `Promise.allSettled` (Chrome 76), so the service worker cannot finish installing on the tablet's
-  engine. Offline-first is therefore not satisfied on that device until either the WebView is upgraded
-  or Workbox stays inside the Chrome 61 API surface. Tracked on issue #23.
+- **Offline caching:** Workbox 7.4.0 parses on Chrome 61, but its install handler calls
+  `Promise.allSettled` (Chrome 76), so its worker could never finish installing on the tablet's engine
+  and offline-first was not satisfied there. The worker is hand-written instead (`src/sw.ts`) and stays
+  inside the Chrome 61 API surface: CacheStorage (42), FetchEvent (45), `skipWaiting` (45),
+  `clients.claim` (45), cache query options (54). It is built as a plain script, because that engine
+  cannot register a module worker, and it precaches one file at a time, so a single unreachable file
+  does not take the whole cache down on a weak connection. Tracked on issue #23.
 - No CDN dependencies, no web fonts, no network requests at runtime. Everything is bundled.
 
 ---
