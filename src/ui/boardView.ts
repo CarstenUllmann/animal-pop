@@ -73,7 +73,7 @@ export function createBoardView(options: BoardViewOptions): BoardView {
     tile.tabIndex = -1
     tile.dataset.index = String(index)
     tile.dataset.animal = animal
-    tile.setAttribute('aria-label', definition?.label ?? animal)
+    tile.setAttribute('aria-label', definition === undefined ? animal : definition.label)
 
     const face = document.createElement('img')
     face.className = 'tile__face'
@@ -139,7 +139,8 @@ export function createBoardView(options: BoardViewOptions): BoardView {
     for (const move of result.moves) {
       if (move.from !== null) continue
       const col = colOf(move.to)
-      newPerColumn.set(col, (newPerColumn.get(col) ?? 0) + 1)
+      const seen = newPerColumn.get(col)
+      newPerColumn.set(col, seen === undefined ? 1 : seen + 1)
     }
 
     const animations: Array<Promise<unknown>> = []
@@ -153,7 +154,8 @@ export function createBoardView(options: BoardViewOptions): BoardView {
       let delay: number
       if (move.from === null) {
         // New animals stack above the board and drop in from the top.
-        startRow = row - (newPerColumn.get(col) ?? 1)
+        const stacked = newPerColumn.get(col)
+        startRow = row - (stacked === undefined ? 1 : stacked)
         delay = row * MOTION.dealStagger
       } else {
         startRow = rowOf(move.from)

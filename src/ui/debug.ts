@@ -15,7 +15,8 @@ const DEBUG_PARAM = 'debug'
 
 export function parseDebugFlag(search: string): boolean {
   const value = new URLSearchParams(search).get(DEBUG_PARAM)
-  return value === '1' || value?.toLowerCase() === 'true'
+  if (value === '1') return true
+  return value !== null && value.toLowerCase() === 'true'
 }
 
 export interface DebugOverlay {
@@ -134,7 +135,8 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): Debu
   if (info.bootLog !== undefined) {
     const log = info.bootLog
     setValue('boot', bootText(log))
-    const persistedError = log.previous()?.lastError
+    const previous = log.previous()
+    const persistedError = previous === null ? null : previous.lastError
     if (persistedError !== null && persistedError !== undefined) setLastError(persistedError)
     unsubscribeBootLog = log.subscribe(() => setValue('boot', bootText(log)))
   }
@@ -194,7 +196,9 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): Debu
   window.addEventListener('keydown', onKeyDown)
   document.addEventListener('visibilitychange', onVisibility)
   toggle.addEventListener('click', onToggle)
-  navigator.serviceWorker?.addEventListener('controllerchange', onServiceWorkerChange)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('controllerchange', onServiceWorkerChange)
+  }
 
   return {
     element: panel,
@@ -208,7 +212,9 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): Debu
       window.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('visibilitychange', onVisibility)
       toggle.removeEventListener('click', onToggle)
-      navigator.serviceWorker?.removeEventListener('controllerchange', onServiceWorkerChange)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('controllerchange', onServiceWorkerChange)
+      }
       if (unsubscribeBootLog !== null) unsubscribeBootLog()
       panel.remove()
     },

@@ -66,8 +66,8 @@ export interface BootLog {
 export function createBootLog(options: BootLogOptions = {}): BootLog {
   // An absent storage means "no storage", not `localStorage`; a fake can also be injected.
   const storage = options.storage === undefined ? defaultStorage() : options.storage
-  const clock = options.clock ?? { now: () => Date.now() }
-  const maxSteps = options.maxSteps ?? MAX_STEPS
+  const clock = options.clock === undefined ? { now: () => Date.now() } : options.clock
+  const maxSteps = options.maxSteps === undefined ? MAX_STEPS : options.maxSteps
 
   const persisted = readRun(storage)
   const run: BootRun = { startedAt: clock.now(), steps: [], lastError: null }
@@ -76,7 +76,7 @@ export function createBootLog(options: BootLogOptions = {}): BootLog {
   const persist = (): boolean => {
     try {
       return storage.write(STORAGE_KEY, JSON.stringify(run))
-    } catch {
+    } catch (unused) {
       // Storage can refuse at any time; the trace is then only visible on screen.
       return false
     }
@@ -86,7 +86,7 @@ export function createBootLog(options: BootLogOptions = {}): BootLog {
     for (const listener of listeners) {
       try {
         listener()
-      } catch {
+      } catch (unused) {
         // A listener must never break the boot path.
       }
     }
@@ -135,8 +135,9 @@ export function describeError(value: unknown): string {
   if (value instanceof Error) return `${value.name}: ${value.message}`
   if (typeof value === 'string') return value
   try {
-    return JSON.stringify(value) ?? String(value)
-  } catch {
+    const encoded = JSON.stringify(value)
+    return encoded === null ? String(value) : encoded
+  } catch (unused) {
     return String(value)
   }
 }
@@ -149,7 +150,7 @@ function readRun(storage: BootStorage): BootRun | null {
   let raw: string | null
   try {
     raw = storage.read(STORAGE_KEY)
-  } catch {
+  } catch (unused) {
     return null
   }
   if (raw === null) return null
@@ -157,7 +158,7 @@ function readRun(storage: BootStorage): BootRun | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
-  } catch {
+  } catch (unused) {
     return null
   }
   if (typeof parsed !== 'object' || parsed === null) return null
@@ -194,7 +195,7 @@ function defaultStorage(): BootStorage {
       if (store === null) return null
       try {
         return store.getItem(key)
-      } catch {
+      } catch (unused) {
         return null
       }
     },
@@ -203,7 +204,7 @@ function defaultStorage(): BootStorage {
       try {
         store.setItem(key, value)
         return true
-      } catch {
+      } catch (unused) {
         return false
       }
     },

@@ -25,7 +25,7 @@ export function createSynthPlayer(): AudioPlayer {
         master = context.createGain()
         master.gain.value = muted ? 0 : AUDIO.masterGain
         master.connect(context.destination)
-      } catch {
+      } catch (unused) {
         context = null
         master = null
         return
@@ -76,7 +76,8 @@ export function createSynthPlayer(): AudioPlayer {
     if (nodes === null) return
 
     const animal: AnimalDef | undefined = ANIMALS_BY_ID.get(animalId)
-    const root = animal?.pitch ?? 659.25
+    // Fallback for engines that cannot parse the nullish coalescing operator.
+    const root = animal === undefined ? 659.25 : animal.pitch
     const notes = Math.min(Math.max(1, count), AUDIO.popMaxNotes)
     const start = nodes.audio.currentTime + 0.005
     const loudness = Math.min(AUDIO.popGain + (count - 1) * 0.012, 0.26)

@@ -44,7 +44,10 @@ export function createRng(seed: number): Rng {
  */
 export function seedFromCrypto(values: ArrayLike<number>): number {
   let seed = 0
-  for (let i = 0; i < values.length; i++) seed = (seed ^ (values[i] ?? 0)) >>> 0
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i]
+    seed = (seed ^ (value === undefined ? 0 : value)) >>> 0
+  }
   return seed
 }
 
