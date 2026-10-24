@@ -187,8 +187,7 @@ function readRun(storage: BootStorage): BootRun | null {
  * (Chrome 71) and a WebView can deny `localStorage` outright. Reading it must not throw: this is
  * the code that has to survive a force-close.
  */
-// Exported so the launch probe in index.html and the trace read by debug.ts share one store.
-export function defaultStorage(): BootStorage {
+function defaultStorage(): BootStorage {
   const store = typeof localStorage === 'object' ? localStorage : null
   return {
     read(key: string): string | null {

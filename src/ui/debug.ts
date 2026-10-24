@@ -10,7 +10,6 @@
 
 import { describeError, traceLines, type BootLog } from './bootlog'
 import { hasMatchMedia } from './capabilities'
-import { probeLines } from './probe'
 
 const DEBUG_PARAM = 'debug'
 
@@ -30,8 +29,6 @@ export interface DebugInfo {
   animals?: readonly string[]
   /** Boot trace, the reason the overlay is worth opening on the tablet (issue #23). */
   bootLog?: BootLog
-  /** Launch probe history, read from the key `probe.ts` owns (issue #23). */
-  probe?: string
 }
 
 type ValueKey =
@@ -47,7 +44,6 @@ type ValueKey =
   | 'serviceWorker'
   | 'build'
   | 'boot'
-  | 'probe'
 
 interface RowDef {
   key: ValueKey
