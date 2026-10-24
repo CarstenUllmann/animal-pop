@@ -58,85 +58,134 @@ body {
   place-items: center;
 }
 
-.hello {
-  display: flex;
-  flex-direction: column;
-  gap: clamp(0.5rem, 2.5vmin, 1.75rem);
-  align-items: center;
-  text-align: center;
-}
+/* ------------------------------------------------------------------ */
+/* Board                                                               */
+/* ------------------------------------------------------------------ */
 
-.bubbles {
-  display: flex;
-  gap: clamp(0.5rem, 2vmin, 1.25rem);
-  align-items: flex-end;
-  height: clamp(7rem, 30vmin, 18rem);
-  padding-inline: clamp(0.5rem, 3vmin, 2rem);
-}
-
-.bubble {
-  display: block;
-  height: var(--bubble-size);
+.board {
+  position: relative;
+  width: min(92vmin, 100%);
   aspect-ratio: 1;
-  border-radius: 50%;
+  overflow: hidden;
+  touch-action: none;
   background:
-    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.95) 0 5%, rgba(255, 255, 255, 0.22) 11%, transparent 26%),
-    radial-gradient(circle at 50% 58%, var(--bubble-hue) 0 58%, color-mix(in srgb, var(--bubble-hue) 55%, #000) 100%);
+    radial-gradient(120% 120% at 25% 0%, rgba(123, 223, 242, 0.1), transparent 55%),
+    radial-gradient(120% 120% at 80% 100%, rgba(255, 143, 163, 0.09), transparent 60%),
+    rgba(7, 10, 22, 0.62);
+  border-radius: clamp(0.75rem, 3vmin, 2rem);
   box-shadow:
-    inset -0.7vmin -1.1vmin 2.2vmin rgba(0, 0, 0, 0.28),
-    0 1.2vmin 3vmin rgba(0, 0, 0, 0.35);
-  animation: bob 3.8s ease-in-out infinite;
+    inset 0 0 0 max(1px, 0.25vmin) rgba(255, 255, 255, 0.06),
+    0 2vmin 6vmin rgba(0, 0, 0, 0.45);
 }
 
-.bubble--a {
-  --bubble-size: 78%;
-  --bubble-hue: var(--pink);
-  animation-delay: -0.6s;
+.tile {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--grid));
+  height: calc(100% / var(--grid));
+  padding: 5%;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 22%;
+  outline: none;
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.bubble--b {
-  --bubble-size: 100%;
-  --bubble-hue: var(--blue);
-  animation-delay: -1.8s;
+.tile::before {
+  position: absolute;
+  inset: 4%;
+  content: '';
+  background: radial-gradient(
+    circle at 50% 32%,
+    rgba(255, 255, 255, 0.075),
+    rgba(255, 255, 255, 0.02) 72%
+  );
+  border-radius: 26%;
+  box-shadow: inset 0 0 0 max(1px, 0.16vmin) rgba(255, 255, 255, 0.05);
+  transition: background-color 120ms ease;
 }
 
-.bubble--c {
-  --bubble-size: 64%;
-  --bubble-hue: var(--yellow);
-  animation-delay: -2.7s;
+.tile__face {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0.5vmin 0.9vmin rgba(0, 0, 0, 0.35));
+  transition: transform 120ms ease;
+  -webkit-user-drag: none;
 }
 
-.hello__title {
-  margin: 0;
-  font-size: clamp(2.5rem, 11vmin, 7rem);
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: 0.01em;
-  text-shadow: 0 0.6vmin 0 rgba(0, 0, 0, 0.35);
+.tile:active::before {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.hello__note {
-  margin: 0;
-  font-size: clamp(0.65rem, 2vmin, 0.9rem);
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  opacity: 0.55;
+.tile:active .tile__face {
+  transform: scale(0.94);
 }
 
-@keyframes bob {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
+.burst {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: calc(100% / var(--grid));
+  height: calc(100% / var(--grid));
+  pointer-events: none;
+}
+
+.burst::before {
+  position: absolute;
+  inset: 12%;
+  content: '';
+  border: max(2px, 0.5vmin) solid rgba(255, 247, 214, 0.9);
+  border-radius: 50%;
+  animation: burst-ring 430ms ease-out forwards;
+}
+
+.burst::after {
+  position: absolute;
+  inset: 22%;
+  content: '';
+  background: radial-gradient(
+    circle,
+    rgba(255, 247, 214, 0.85) 0%,
+    rgba(255, 143, 163, 0.55) 45%,
+    rgba(255, 143, 163, 0) 72%
+  );
+  border-radius: 50%;
+  animation: burst-glow 430ms ease-out forwards;
+}
+
+@keyframes burst-ring {
+  from {
+    opacity: 0.9;
+    transform: scale(0.3);
   }
-  50% {
-    transform: translateY(-4%) scale(1.02);
+  to {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+@keyframes burst-glow {
+  from {
+    opacity: 0.85;
+    transform: scale(0.2);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.35);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bubble {
-    animation: none;
+  .tile__face,
+  .tile::before {
+    transition: none;
   }
 }
 

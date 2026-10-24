@@ -19,6 +19,12 @@ export interface DebugOverlay {
   destroy(): void
 }
 
+/** Values the running game already knows; later milestones add more. */
+export interface DebugInfo {
+  seed?: number
+  animals?: readonly string[]
+}
+
 type ValueKey =
   | 'level'
   | 'seed'
@@ -58,7 +64,7 @@ const ROWS: RowDef[] = [
   },
 ]
 
-export function mountDebugOverlay(root: HTMLElement): DebugOverlay {
+export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): DebugOverlay {
   const panel = element('aside', 'debug')
   panel.setAttribute('aria-label', 'Debug overlay')
 
@@ -97,7 +103,12 @@ export function mountDebugOverlay(root: HTMLElement): DebugOverlay {
 
   const setValue = (key: ValueKey, text: string): void => {
     values[key].textContent = text
+    values[key].classList.remove('debug__value--pending')
   }
+
+  // M1 knows the seed and the animals in play; the rest arrive with levels in M2.
+  if (info.seed !== undefined) setValue('seed', info.seed.toString(16).padStart(8, '0'))
+  if (info.animals !== undefined) setValue('animals', info.animals.join(' '))
 
   const setLastError = (message: string): void => {
     const trimmed = message.trim() || 'unknown error'
