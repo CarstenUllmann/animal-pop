@@ -166,30 +166,42 @@ function readRun(storage: BootStorage): BootRun | null {
   if (typeof record.startedAt !== 'number') return null
 
   const steps = Array.isArray(record.steps) ? record.steps : []
+  const valid: BootStep[] = []
+  // No `flatMap`: `Array.prototype.flatMap` is Chrome 69, newer than the WebView engine.
+  for (const step of steps) {
+    if (typeof step !== 'object' || step === null) continue
+    const entry = step as Record<string, unknown>
+    if (typeof entry.name !== 'string' || typeof entry.at !== 'number') continue
+    valid.push({ name: entry.name, at: entry.at })
+  }
+
   return {
     startedAt: record.startedAt,
-    steps: steps.flatMap((step) => {
-      if (typeof step !== 'object' || step === null) return []
-      const entry = step as Record<string, unknown>
-      if (typeof entry.name !== 'string' || typeof entry.at !== 'number') return []
-      return [{ name: entry.name, at: entry.at }]
-    }),
+    steps: valid,
     lastError: typeof record.lastError === 'string' ? record.lastError : null,
   }
 }
 
+/**
+ * The persisted store, reached through `typeof` because Chrome 61 has no global-object alias
+ * (Chrome 71) and a WebView can deny `localStorage` outright. Reading it must not throw: this is
+ * the code that has to survive a force-close.
+ */
 function defaultStorage(): BootStorage {
+  const store = typeof localStorage === 'object' ? localStorage : null
   return {
     read(key: string): string | null {
+      if (store === null) return null
       try {
-        return globalThis.localStorage?.getItem(key) ?? null
+        return store.getItem(key)
       } catch {
         return null
       }
     },
     write(key: string, value: string): boolean {
+      if (store === null) return false
       try {
-        globalThis.localStorage?.setItem(key, value)
+        store.setItem(key, value)
         return true
       } catch {
         return false

@@ -2,7 +2,7 @@ import { ANIMALS_BY_ID } from '../game/animals'
 import { colOf, rowOf } from '../game/board'
 import { GRID, MOTION } from '../game/constants'
 import type { AnimalId, Board, PopResult } from '../game/types'
-import { canAnimate, canListAnimations, hasMatchMedia } from './capabilities'
+import { canAnimate, canAwaitFinished, canListAnimations, hasMatchMedia } from './capabilities'
 
 export interface BoardView {
   readonly element: HTMLElement
@@ -38,7 +38,12 @@ function runAnimation(
   options: KeyframeAnimationOptions,
 ): Promise<unknown> {
   if (!canAnimate(element)) return Promise.resolve()
-  return element.animate(keyframes, options).finished.catch(() => undefined)
+  const animation = element.animate(keyframes, options)
+  // Chrome 61 can animate but cannot say when an animation lands, so there is no completion
+  // signal to sequence the board on. The tile keeps the inline transform its caller already set,
+  // which is the static board SPEC §14.3 allows.
+  if (!canAwaitFinished(animation)) return Promise.resolve()
+  return animation.finished.catch(() => undefined)
 }
 
 export function createBoardView(options: BoardViewOptions): BoardView {

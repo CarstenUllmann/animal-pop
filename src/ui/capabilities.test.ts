@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   canAnimate,
+  canAwaitFinished,
   canListAnimations,
   capabilityFlags,
   engineToken,
@@ -52,6 +53,20 @@ describe('canListAnimations', () => {
   it('rejects an element that cannot', () => {
     expect(canListAnimations({})).toBe(false)
     expect(canListAnimations(undefined)).toBe(false)
+  })
+})
+
+describe('canAwaitFinished', () => {
+  it('accepts an animation that can report when it lands', () => {
+    const animation = { finished: Promise.resolve(null) }
+    expect(canAwaitFinished(animation)).toBe(true)
+  })
+
+  it('rejects a Chrome 61 animation, which has no finished promise', () => {
+    expect(canAwaitFinished({})).toBe(false)
+    expect(canAwaitFinished({ finished: undefined })).toBe(false)
+    expect(canAwaitFinished({ finished: 'not a promise' })).toBe(false)
+    expect(canAwaitFinished(null)).toBe(false)
   })
 })
 

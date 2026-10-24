@@ -32,7 +32,7 @@ log.step(log.storageAvailable() ? 'storage ok' : 'storage unavailable')
 log.step(`engine ${engineToken(navigator.userAgent)}`)
 log.step(
   `capabilities: ${capabilityFlags({
-    crypto: globalThis.crypto,
+    crypto: window.crypto,
     window,
     element: document.createElement('div'),
   }).join(', ') || 'none'}`,
@@ -161,9 +161,9 @@ function start(root: HTMLElement): void {
 
 /** Feature-detected: older WebViews do not always provide `crypto.getRandomValues`. */
 function randomSeed(): number {
-  if (hasRandomValues(globalThis.crypto)) {
+  if (hasRandomValues(window.crypto)) {
     log.step('random: crypto')
-    return seedFromCrypto(globalThis.crypto.getRandomValues(new Uint32Array(1)))
+    return seedFromCrypto(window.crypto.getRandomValues(new Uint32Array(1)))
   }
   log.step('random: Math.random fallback')
   return seedFromRandom(Math.random())

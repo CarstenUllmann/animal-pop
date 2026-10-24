@@ -1,11 +1,12 @@
 /**
  * Feature detection for the platform baseline (SPEC §2, "Platform constraint").
  *
- * The baseline is Chrome 138, so every API here is allowed; what is not guaranteed is that the
- * installed app gets that Chrome. The standalone launch runs in whatever WebView the tablet
- * provides, and issue #23 is exactly that gap: the same bundle works in the tablet browser and
- * on a newer phone. Each guard takes the object it checks and narrows it, so the call sites stay
- * typed and the fallback is visible from the code.
+ * The build targets Chrome 61, the engine measured on the tablet's System WebView, because the
+ * installed app runs in that WebView rather than in the tablet's browser (Chrome 138). Syntax is
+ * downlevelled by the build target; what the target cannot fix is the set of APIs an old engine
+ * actually exposes, so every newer API is read through a guard here. Issue #23 is exactly that
+ * gap: the same bundle works in the tablet browser and on a newer phone. Each guard takes the
+ * object it checks and narrows it, so the call sites stay typed and the fallback is visible.
  *
  * Pure (no globals touched), so the guards can be tested in the node environment.
  */
@@ -51,7 +52,27 @@ export function canListAnimations(target: unknown): target is Element & ListAnim
   return hasMethod(target, 'getAnimations')
 }
 
-/** The four guards read together, as the names the engine actually provides. */
+export interface AwaitableAnimation {
+  finished: PromiseLike<unknown>
+}
+
+/**
+ * `Animation.finished` is the completion promise the board animation sequences on (Chrome 75).
+ * Chrome 61 has `Element.animate` without it, so an older engine gets no landing signal and the
+ * board stays static, as SPEC §14.3 says. This guard takes the animation object a call returned,
+ * so it is not part of the snapshot below.
+ */
+export function canAwaitFinished(target: unknown): target is AwaitableAnimation {
+  if (typeof target !== 'object' || target === null) return false
+  const finished = (target as Record<string, unknown>).finished
+  return (
+    typeof finished === 'object' &&
+    finished !== null &&
+    typeof (finished as PromiseLike<unknown>).then === 'function'
+  )
+}
+
+/** The snapshot guards read together, as the names the engine actually provides. */
 export interface EngineSnapshot {
   crypto: unknown
   window: unknown

@@ -31,8 +31,11 @@ export function createSynthPlayer(): AudioPlayer {
         return
       }
     }
-    if (context.state === 'suspended') {
-      void context.resume().catch(() => undefined)
+    // `state` and `resume()` are not guaranteed on an older WebView, and Android only allows the
+    // context to start inside a gesture. Resuming an already-running context is a no-op, and an
+    // engine without `resume` simply leaves the taps silent rather than throwing.
+    if (typeof context.resume === 'function') {
+      void Promise.resolve(context.resume()).catch(() => undefined)
     }
   }
 

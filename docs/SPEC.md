@@ -30,7 +30,19 @@ There is **no failure state, no timer, no score, and no text she has to read**.
 Chrome on Android 8.1 is frozen at **Chrome 138** — no further updates. Therefore:
 
 - **Browser baseline: Chrome 138.** No web platform features newer than that.
-- Build target: `es2022`, esbuild/browserslist target `chrome138`.
+- **Effective baseline: System WebView 61.0.3163.98**, the engine measured on the target tablet
+  (issue #23). The installed app runs in the WebView, not in the browser, so the shipped bundle has
+  to *parse* on Chrome 61. This is what the crash was: `?.` and `??` are Chrome 64/70 syntax, so the
+  module never executed in standalone, and there is no console to show it.
+- Build target: `es2017`, esbuild target `chrome61`. Syntax newer than Chrome 61 is downlevelled by
+  the build; APIs newer than it — `globalThis` (71), `Array.flatMap` (69), `getAnimations` (69),
+  `Animation.finished` (75) — cannot be transpiled, so they are feature-detected at runtime and the
+  board falls back to the static grid (SPEC §14.3). CSS newer than Chrome 61 (`aspect-ratio`,
+  `clamp()`, flex `gap`) degrades cosmetically only.
+- **Known gap, offline caching:** Workbox 7.4.0 parses on Chrome 61, but its install handler calls
+  `Promise.allSettled` (Chrome 76), so the service worker cannot finish installing on the tablet's
+  engine. Offline-first is therefore not satisfied on that device until either the WebView is upgraded
+  or Workbox stays inside the Chrome 61 API surface. Tracked on issue #23.
 - No CDN dependencies, no web fonts, no network requests at runtime. Everything is bundled.
 
 ---

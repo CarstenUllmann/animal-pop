@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// Browser baseline: Chrome 138 (the last Chrome available on the target tablet).
-// Nothing newer than es2022 may be emitted, and the build must not depend on a CDN.
-const CHROME_TARGET = 'chrome138'
-const BUILD_TARGETS = ['es2022', CHROME_TARGET]
+// Engine baseline: Chrome 61, the version measured on the tablet's System WebView (issue #23).
+// The installed app runs in that WebView, not in the tablet's browser (Chrome 138), so the shipped
+// bundle has to parse there. es2017 caps the syntax, chrome61 covers the engine; APIs newer than
+// Chrome 61 are feature-detected at runtime in src/ui/capabilities.ts. No CDN in the build.
+const CHROME_TARGET = 'chrome61'
+const BUILD_TARGETS = ['es2017', CHROME_TARGET]
 
 export default defineConfig({
   // Relative base so the same build works on GitHub Pages project URLs and local previews.
