@@ -1,4 +1,4 @@
-import type { AnimalId } from '../game/types'
+import type { AnimalId, PartyTier } from '../game/types'
 
 /**
  * The audio seam (SPEC §11): game code only ever talks to this interface, so a
@@ -13,6 +13,12 @@ export interface AudioPlayer {
   playInvalid(): void
   /** Wind-like noise sweep when the board reshuffles itself. */
   playReshuffle(): void
+  /** Tiny high tick as one bubble leaves the rack, distinct from an animal pop (SPEC §11). */
+  playBubble(): void
+  /** Balloon pop: filtered noise plus a pitch blip, ascending with the balloon index (SPEC §11). */
+  playBalloon(index: number): void
+  /** Completion cue: fanfare for a big or medium party, soft two-note chime for a small one. */
+  playCompletion(tier: PartyTier): void
   setMuted(muted: boolean): void
   isMuted(): boolean
 }

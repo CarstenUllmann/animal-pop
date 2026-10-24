@@ -54,3 +54,17 @@ export function seedFromCrypto(values: ArrayLike<number>): number {
 export function seedFromRandom(value: number): number {
   return Math.floor(value * 0x100000000) >>> 0
 }
+
+/**
+ * Combining the session seed with a level number, so the same level regenerates identically on
+ * every launch while different levels do not share a stream (SPEC §9.2). murmur3's finalizer:
+ * cheap, deterministic, and no floating point.
+ */
+export function mixSeed(sessionSeed: number, value: number): number {
+  let hash = (sessionSeed >>> 0) ^ (Math.imul(value, 0x9e3779b9) >>> 0)
+  hash = (hash ^ (hash >>> 16)) >>> 0
+  hash = Math.imul(hash, 0x85ebca6b) >>> 0
+  hash = (hash ^ (hash >>> 13)) >>> 0
+  hash = Math.imul(hash, 0xc2b2ae35) >>> 0
+  return (hash ^ (hash >>> 16)) >>> 0
+}

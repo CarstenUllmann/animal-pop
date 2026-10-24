@@ -1,12 +1,24 @@
 :root {
-  color-scheme: dark;
   --bg: #101426;
   --bg-deep: #090c18;
+  --panel: #1f2b45;
   --cream: #ffe9c9;
   --ink: #2a1a12;
   --pink: #ff8fa3;
   --blue: #7bdff2;
   --yellow: #ffd166;
+  --muted: #6c7aa5;
+
+  /* SPEC §6: the Chrome 61 baseline has no CSS custom properties, so every value
+     also has a plain fallback. Custom properties are set by ui/layout.ts. */
+  --cell: 96px;
+  --cols: 6;
+  --rows: 6;
+
+  /* Mirror of CELEBRATION.playButtonDelayMs in game/constants.ts. CSS cannot read a constant, so
+     this is the one place the number is written twice - the literal is the fallback. */
+  --play-button-delay: 1500ms;
+
   font-family: ui-rounded, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
   -webkit-text-size-adjust: 100%;
 }
@@ -17,12 +29,16 @@
   box-sizing: border-box;
 }
 
+/* The celebration layer is hidden between levels, and `display: flex` would otherwise win. */
+[hidden] {
+  display: none;
+}
+
 html,
 body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  overscroll-behavior: none;
   background: var(--bg);
 }
 
@@ -32,13 +48,16 @@ html {
 }
 
 body {
-  /* Fixed so the Chrome UI can never introduce a scrollable page. */
+  /* Fixed so the Chrome UI can never introduce a scrollable page.
+     Plain top/right/bottom/left rather than `inset`, which Chrome 61 does not know. */
   position: fixed;
-  inset: 0;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
-    env(safe-area-inset-left);
-  display: grid;
-  place-items: center;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
   color: var(--cream);
   background:
     radial-gradient(120vmax 80vmax at 18% -10%, #2b2352 0%, transparent 55%),
@@ -52,38 +71,60 @@ body {
 }
 
 #app {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
-  place-items: center;
 }
 
 /* ------------------------------------------------------------------ */
-/* Board                                                               */
+/* Layout (SPEC §13)                                                   */
 /* ------------------------------------------------------------------ */
 
+/* Landscape: board on top, panel below. Portrait: panel below the board, which is
+   the fallback layout, and the celebration layer gets its own band. */
+.game {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.board-area {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-top: 1rem;
+}
+
+/* Chrome 61 does not know `aspect-ratio` (Chrome 88), so the board is sized from the cell. */
 .board {
   position: relative;
-  width: min(92vmin, 100%);
-  aspect-ratio: 1;
+  width: calc(var(--cell) * var(--cols));
+  height: calc(var(--cell) * var(--rows));
   overflow: hidden;
   touch-action: none;
   background:
     radial-gradient(120% 120% at 25% 0%, rgba(123, 223, 242, 0.1), transparent 55%),
     radial-gradient(120% 120% at 80% 100%, rgba(255, 143, 163, 0.09), transparent 60%),
     rgba(7, 10, 22, 0.62);
-  border-radius: clamp(0.75rem, 3vmin, 2rem);
+  border-radius: 1rem;
   box-shadow:
-    inset 0 0 0 max(1px, 0.25vmin) rgba(255, 255, 255, 0.06),
-    0 2vmin 6vmin rgba(0, 0, 0, 0.45);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 20px 60px rgba(0, 0, 0, 0.45);
 }
+
+/* ------------------------------------------------------------------ */
+/* Tiles                                                               */
+/* ------------------------------------------------------------------ */
 
 .tile {
   position: absolute;
   top: 0;
   left: 0;
-  width: calc(100% / var(--grid));
-  height: calc(100% / var(--grid));
+  width: calc(100% / var(--cols));
+  height: calc(100% / var(--rows));
   padding: 5%;
   cursor: pointer;
   background: transparent;
@@ -96,7 +137,10 @@ body {
 
 .tile::before {
   position: absolute;
-  inset: 4%;
+  top: 4%;
+  right: 4%;
+  bottom: 4%;
+  left: 4%;
   content: '';
   background: radial-gradient(
     circle at 50% 32%,
@@ -104,7 +148,7 @@ body {
     rgba(255, 255, 255, 0.02) 72%
   );
   border-radius: 26%;
-  box-shadow: inset 0 0 0 max(1px, 0.16vmin) rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   transition: background-color 120ms ease;
 }
 
@@ -114,9 +158,19 @@ body {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 0.5vmin 0.9vmin rgba(0, 0, 0, 0.35));
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
   transition: transform 120ms ease;
   -webkit-user-drag: none;
+}
+
+/* SPEC §8.3: subtle glow around the goal animal. */
+.tile--goal::before {
+  background: radial-gradient(
+    circle at 50% 32%,
+    rgba(255, 209, 102, 0.28),
+    rgba(255, 143, 163, 0.08) 72%
+  );
+  box-shadow: inset 0 0 0 2px rgba(255, 209, 102, 0.45);
 }
 
 .tile:active::before {
@@ -132,23 +186,29 @@ body {
   top: 0;
   left: 0;
   z-index: 2;
-  width: calc(100% / var(--grid));
-  height: calc(100% / var(--grid));
+  width: calc(100% / var(--cols));
+  height: calc(100% / var(--rows));
   pointer-events: none;
 }
 
 .burst::before {
   position: absolute;
-  inset: 12%;
+  top: 12%;
+  right: 12%;
+  bottom: 12%;
+  left: 12%;
   content: '';
-  border: max(2px, 0.5vmin) solid rgba(255, 247, 214, 0.9);
+  border: 2px solid rgba(255, 247, 214, 0.9);
   border-radius: 50%;
   animation: burst-ring 430ms ease-out forwards;
 }
 
 .burst::after {
   position: absolute;
-  inset: 22%;
+  top: 22%;
+  right: 22%;
+  bottom: 22%;
+  left: 22%;
   content: '';
   background: radial-gradient(
     circle,
@@ -177,35 +237,488 @@ body {
     transform: scale(0.2);
   }
   to {
-    opacity: 0;
+    opacity: 1;
     transform: scale(1.35);
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Celebration layer (SPEC §13)                                        */
+/* ------------------------------------------------------------------ */
+
+/* SPEC §10.1: the party shows on top of the board, which stays visible under it. The dim is a
+   scrim on the layer itself rather than a class on the board - `:has()` is Chrome 105, and the
+   celebration module has no board element to toggle. It works because the layer is mounted inside
+   the board area, which is the rect `ui/celebration.ts` measures. */
+.celebration {
+  position: relative;
+  width: 100%;
+  min-height: 40vh;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 12, 24, 0.35);
+}
+
+/* Flex `gap` is Chrome 84, so the celebration row spaces its children with margins. */
+.celebration > * + *,
+.rack > * + *,
+.goals > * + * {
+  margin-left: 0.7rem;
+}
+
+.celebration__canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* The canvas `ui/celebration.ts` actually makes. It is the scrim, so the taps still reach the
+   balloons: the layer itself cannot be tapped. */
+.particle-layer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* SPEC §10.2: the burst count is capped by PARTICLES in the core, and the tier the celebration
+   runs at decides the pool. `frameTier()` is internal to the module, so the tier only reaches CSS
+   when the game writes `data-tier` on the layer; until it does this rule is inert. */
+[data-tier='30fps'] .particle-layer {
+  opacity: 0.6;
+}
+
+.celebration__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* SPEC §10: >= 36 CSS px balloons, >= 90 CSS px tap target. The balloons are placed by the
+   layer (`left: N%`), so they are positioned rather than flowed. */
+.balloon {
+  position: absolute;
+  top: 30%;
+  width: 44px;
+  height: 52px;
+  margin: 0 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  /* SPEC §10.1: they rise one after another, so the scene does not arrive as one flat wall. The
+     stagger is the inline `animation-delay` the module sets from CELEBRATION.balloonStaggerMs,
+     which is why the rise is an animation. */
+  animation: balloon-rise 600ms ease-out both;
+}
+
+/* The pop is a transition, not a second animation, because the inline delay the module sets for
+   the stagger would otherwise delay the pop as well. A tapped balloon pops at once. */
+.balloon--popped {
+  transform: scale(0.55);
+  transition: transform 260ms ease-out;
+}
+
+.balloon__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+/* The string is a line, not a shape, so it cannot be filled. */
+.balloon__svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+@keyframes balloon-rise {
+  from {
+    opacity: 0;
+    transform: translateY(30%) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* The play arrow, SPEC §10.1: it appears after the fanfare has run, not at the same time, and the
+   pulse is an adult-visible affordance, so reduced motion keeps the arrow still. The delay is the
+   custom property at the top of this file, mirroring CELEBRATION.playButtonDelayMs; the literal is
+   the Chrome 61 fallback. The arrow is in the DOM from the moment the party starts, so it is
+   tappable the instant it is visible (issue #13). */
+.next {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  padding: 0;
+  border: 0;
+  border-radius: 24%;
+  background: rgba(255, 209, 102, 0.16);
+  box-shadow: inset 0 0 0 2px rgba(255, 209, 102, 0.5);
+  cursor: pointer;
+  color: var(--yellow);
+  touch-action: manipulation;
+  animation: play-appear 300ms ease-out both;
+  animation-delay: 1500ms;
+  animation-delay: var(--play-button-delay);
+}
+
+.next svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.next--pulsing {
+  animation: pulse 1.4s ease-in-out infinite;
+  /* The delay belongs to the fade-in; a class added after it must not inherit another 1.5s wait. */
+  animation-delay: 0s;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Panel (SPEC §13)                                                    */
+/* ------------------------------------------------------------------ */
+
+.panel {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  padding: 0.8rem 1rem;
+  background: var(--panel);
+  border-top: 1px solid rgba(123, 223, 242, 0.2);
+}
+
+.panel__level {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 4rem;
+  cursor: pointer;
+}
+
+/* SPEC §13/§14.2: numerals are 40-56 CSS px and the level label is the long-press target. */
+.panel__level-value {
+  font-size: 44px;
+  font-size: var(--level-px, 44px);
+  line-height: 1.1;
+  font-weight: 700;
+  color: var(--cream);
+}
+
+.panel__level-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.panel__goals {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+.goal {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0.4rem 0.6rem;
+  margin-right: 0.8rem;
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.goal__ring {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 44px;
+  transform: rotate(-90deg);
+}
+
+.goal__ring-track {
+  fill: none;
+  stroke: rgba(123, 223, 242, 0.18);
+  stroke-width: 8;
+}
+
+.goal__ring-fill {
+  fill: none;
+  stroke: var(--pink);
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 200ms ease;
+}
+
+.goal__face {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+/* The ring is what she reads; the numeral is the adult backup (SPEC §8.1). */
+.goal__numeral {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--cream);
+  margin-left: 0.5rem;
+}
+
+.goal--done .goal__ring-fill {
+  stroke: var(--yellow);
+  filter: drop-shadow(0 0 6px rgba(255, 209, 102, 0.7));
+}
+
+.goal--done .goal__numeral {
+  color: var(--yellow);
+}
+
+/* SPEC §13/§8.1: the rack shows the full rack, so spent slots read as gaps. */
+.rack {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0.8rem;
+  margin-left: 0.6rem;
+  border-radius: 0.6rem;
+  background: rgba(7, 10, 22, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.rack__bubble {
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--pink), rgba(255, 143, 163, 0.35));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.rack__bubble--spent {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/* The bubble that has just been spent pops once, then stays a gap. */
+.rack__bubble--just-spent {
+  animation: bubble-pop 260ms ease-out;
+}
+
+@keyframes bubble-pop {
+  from {
+    transform: scale(1.25);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes play-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* SPEC §11 (issue #17): the mute toggle is the only chrome on screen with no text, so the icon
+   carries the state on its own and `aria-pressed` carries the same fact for a screen reader. It
+   is a 64 CSS px target and sits in the party band's top-right, which is the one place it cannot
+   overlap the board. */
+.mute {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  color: var(--cream);
+}
+
+.mute svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mute path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Sound on shows the waves, sound off shows the cross. Both are in the icon, and CSS picks one
+   from `aria-pressed`, so the picture and the accessible state cannot disagree (SPEC §11). */
+.mute__cross {
+  display: none;
+}
+
+.mute[aria-pressed='true'] .mute__waves,
+.mute--muted .mute__waves {
+  display: none;
+}
+
+.mute[aria-pressed='true'] .mute__cross,
+.mute--muted .mute__cross {
+  display: inline;
+}
+
+/* SPEC §14.2 (issue #16): the level numeral is the long-press target. There is no visible button
+   and nothing to read (SPEC §1), so the only affordance is the half-second shake on press and the
+   icon that appears after three seconds. Reduced motion keeps the icon and drops the shake
+   (SPEC §13). */
+.panel__level-value.panel__level--shaking {
+  animation: level-shake 500ms ease-in-out;
+}
+
+@keyframes level-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  40% {
+    transform: translateX(3px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+/* The confirm icon. `hidden` is what keeps it invisible until the confirm step opens, so nothing
+   here may set `display` - the `[hidden]` rule at the top of the file would be overridden. */
+.adult-confirm {
+  color: var(--pink);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.panel__level--confirming {
+  color: var(--pink);
+}
+
+/* ------------------------------------------------------------------ */
+/* Portrait fallback                                                   */
+/* ------------------------------------------------------------------ */
+
+body.is-portrait .board-area {
+  flex: 0 0 auto;
+  padding-top: 0.5rem;
+}
+
+/* Portrait puts the celebration band between board and panel, so the panel stays reachable. */
+body.is-portrait .celebration {
+  min-height: 45vh;
+}
+
+/* SPEC §13: the target tablet is landscape 1024x600, so a cell below the tap target
+   means the device is smaller than the spec assumes. Show nothing dramatic - just flag it. */
+body[data-tap-target='too-small'] .panel::after {
+  content: 'small screen';
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion (SPEC §13, §14)                                      */
+/* ------------------------------------------------------------------ */
+
 @media (prefers-reduced-motion: reduce) {
   .tile__face,
-  .tile::before {
+  .tile::before,
+  .ring__arc {
     transition: none;
+  }
+
+  .burst::before,
+  .burst::after {
+    animation: none;
+  }
+
+  .next,
+  .next--pulsing,
+  .balloon svg {
+    animation: none;
+  }
+
+  /* SPEC §13/§14: single frames. A balloon is drawn already in place and the pop is one frame
+     rather than a travel, the confetti layer is not shown at all, and the long-press shake is
+     dropped while the confirm icon stays. */
+  .balloon,
+  .panel__level--shaking {
+    animation: none;
+  }
+
+  .balloon--popped {
+    transition: none;
+  }
+
+  .particle-layer {
+    visibility: hidden;
   }
 }
 
 /* ------------------------------------------------------------------ */
-/* Debug overlay (?debug=1) — adult tooling, deliberately plain.       */
+/* Debug overlay (?debug=1) - adult tooling, deliberately plain.       */
 /* ------------------------------------------------------------------ */
 
 .debug {
   position: fixed;
-  top: max(0.5rem, env(safe-area-inset-top));
-  left: max(0.5rem, env(safe-area-inset-left));
+  top: 0.5rem;
+  left: 0.5rem;
   z-index: 100;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  width: min(23rem, 92vw);
-  max-height: calc(100% - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  width: 23rem;
+  max-height: calc(100% - 1rem);
   padding: 0.55rem 0.65rem 0.6rem;
   overflow: auto;
-  overscroll-behavior: contain;
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
   font-size: 0.72rem;
   line-height: 1.35;
@@ -213,7 +726,7 @@ body {
   background: rgba(6, 8, 18, 0.88);
   border: 1px solid rgba(123, 223, 242, 0.35);
   border-radius: 0.55rem;
-  box-shadow: 0 0.6rem 2rem rgba(0, 0, 0, 0.45);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
   touch-action: pan-y;
   user-select: text;
   -webkit-user-select: text;
@@ -225,9 +738,12 @@ body {
 
 .debug__header {
   display: flex;
-  gap: 0.5rem;
   align-items: center;
   justify-content: space-between;
+}
+
+.debug__header > * + * {
+  margin-left: 0.5rem;
 }
 
 .debug__title {
@@ -256,7 +772,7 @@ body {
 .debug__rows {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.15rem 0.75rem;
+  grid-gap: 0.15rem 0.75rem;
   align-items: baseline;
   margin: 0;
 }
@@ -268,25 +784,21 @@ body {
   font-size: 0.62rem;
 }
 
-.debug__label--pending {
-  color: #5d6a94;
-}
-
 .debug__value {
   margin: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   text-align: right;
   color: #eaf1ff;
 }
 
-.debug__value--pending {
-  color: #5d6a94;
+/* The boot row is a trace, so it reads as lines rather than a right-aligned value. */
+.debug__value--trace {
+  text-align: left;
+  white-space: pre-line;
+  line-height: 1.35;
 }
 
 .debug__error {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
   padding-top: 0.35rem;
   border-top: 1px solid rgba(123, 223, 242, 0.18);
 }
@@ -300,17 +812,20 @@ body {
 
 .debug__error-value {
   margin: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   color: #ffb3c1;
 }
 
 .debug__footer {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem 0.6rem;
   align-items: center;
   padding-top: 0.35rem;
   border-top: 1px solid rgba(123, 223, 242, 0.18);
+}
+
+.debug__footer > * + * {
+  margin-left: 0.6rem;
 }
 
 .debug__hint {
@@ -324,22 +839,16 @@ body {
   display: none;
 }
 
-/* The boot row is a trace, so it reads as lines rather than a right-aligned value. */
-.debug__value--trace {
-  text-align: left;
-  white-space: pre-line;
-  line-height: 1.35;
-}
-
-/* Plain fallback panel — issue #23. It has to render without `?debug=1`, on a device where
-   the game itself never started, so it stays as simple as possible. */
+/* Plain fallback panel - issue #23. It has to render without `?debug=1`, on a device where
+   the game itself never started, so it stays as simple as possible. Chrome 61 syntax only:
+   no CSS custom properties, no clamp, no gradients, no animation. */
 .fallback {
   max-width: 26rem;
   margin: 1.5rem auto;
   padding: 1rem;
   border: 1px solid rgba(123, 223, 242, 0.3);
   border-radius: 0.4rem;
-  background: rgba(31, 43, 69, 0.94);
+  background: #1f2b45;
   color: #eaf1ff;
   font-size: 0.8rem;
 }
@@ -360,7 +869,7 @@ body {
 
 .fallback__line {
   margin: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   line-height: 1.35;
 }
 

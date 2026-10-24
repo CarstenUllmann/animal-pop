@@ -1,262 +1,248 @@
+import { traceLines, type BootLog } from './bootlog'
+
 /**
- * On-device debug overlay (SPEC §14.3). The tablet has no USB tethering we can count
- * on, so `?debug=1` is the debugging channel. This is the M0 skeleton: it reports
- * platform facts and reserves labelled slots for the game values that arrive in M1/M2.
+ * Adult debug overlay (`?debug=1`), SPEC §14.3 and issue #18.
  *
- * Without the query parameter nothing is created, no listeners are added and no
- * requestAnimationFrame loop runs. The `boot` row shows the persisted boot trace
- * (issue #23), which is the only thing a force-close leaves behind.
+ * `?debug=1` only, never a child-visible toggle, so it stays plain, dense and monospace. It
+ * shows what the panel shows plus what the panel cannot: the tap queue, the live particles,
+ * and the tier the renderer is actually running at.
+ *
+ * The overlay does not own those numbers - the game reports them through `set`. That is what
+ * keeps the overlay from ever disagreeing with the panel, and it is why the row helpers are
+ * pure: the value formatting is the part that can be tested without a screen.
  */
 
-import { describeError, traceLines, type BootLog } from './bootlog'
-import { hasMatchMedia } from './capabilities'
-
-const DEBUG_PARAM = 'debug'
-
+/**
+ * SPEC §14.3: `?debug=1` or `?debug=true`, and nothing else. `1` is what the child-proofed
+ * tablet will actually be typed, so it has to work; the flag is read from the URL only, never
+ * from storage, so a debug run cannot leak into the next normal launch.
+ */
 export function parseDebugFlag(search: string): boolean {
-  const value = new URLSearchParams(search).get(DEBUG_PARAM)
-  if (value === '1') return true
-  return value !== null && value.toLowerCase() === 'true'
+  const match = /[?&]debug=([^&#]*)/.exec(search)
+  if (match === null) return false
+  const value = match[1]
+  if (value === undefined) return false
+  // Lower-cased, because `?debug=TRUE` is what a parent actually types on the tablet (SPEC §14.3).
+  const normalised = value.toLowerCase()
+  return normalised === '1' || normalised === 'true'
+}
+
+export interface GoalRow {
+  label: string
+  current: number
+  needed: number
+}
+
+/** What the game tells the overlay. Everything is optional, because a row is only as true as the
+ *  last thing the game reported for it - and a mount before the game has a level has nothing. */
+export interface DebugInfo {
+  level?: number
+  seed?: number
+  animals?: readonly string[]
+  /** Bubbles left in the rack (SPEC §13). */
+  bubbles?: number
+  goals?: readonly GoalRow[]
+  /** Taps waiting while the board is busy. The cap is MAX_QUEUED_TAPS in game/constants.ts. */
+  queue?: number
+  balloons?: number
+  particles?: number
+  /** The tier the renderer is on (SPEC §10.2). Not the tier the game hoped for. */
+  tier?: string
+  /** The boot trace, the reason the overlay is worth opening on the tablet (issue #23). */
+  bootLog?: BootLog
+  /** Left out when the overlay is mounted outside a running game. */
+  onNextLevel?: () => void
 }
 
 export interface DebugOverlay {
-  readonly element: HTMLElement
-  destroy(): void
+  element: HTMLElement
+  /** Report a row. An unknown key paints nothing, and a long value is truncated. */
+  set(key: string, text: string): string
+  measureFps(now: number): string
+  reportError(message: string): void
 }
 
-/** Values the running game already knows; later milestones add more. */
-export interface DebugInfo {
-  seed?: number
-  animals?: readonly string[]
-  /** Boot trace, the reason the overlay is worth opening on the tablet (issue #23). */
-  bootLog?: BootLog
+/** Long values would push the overlay over the panel, so rows are capped. */
+export const MAX_VALUE_LENGTH = 48
+
+/** The rows the game can report, plus `boot`, the trace, which is not a value. */
+const GAME_KEYS = ['level', 'seed', 'animals', 'rack', 'goals', 'queue', 'balloons', 'particles', 'tier', 'fps']
+
+export function isDebugRow(key: string): boolean {
+  return key === 'boot' || GAME_KEYS.indexOf(key) >= 0
 }
 
-type ValueKey =
-  | 'level'
-  | 'seed'
-  | 'animals'
-  | 'bubbles'
-  | 'goals'
-  | 'fps'
-  | 'display'
-  | 'viewport'
-  | 'online'
-  | 'serviceWorker'
-  | 'build'
-  | 'boot'
+/** The text a row shows for a reported value. A trace row is never truncated. */
+export function debugRowText(key: string, text: string): string {
+  if (!isDebugRow(key)) return ''
+  if (key === 'boot') return text
+  return text.length > MAX_VALUE_LENGTH ? `${text.slice(0, MAX_VALUE_LENGTH)}…` : text
+}
+
+/** The text a row shows for a value the game hands over, in its own type. */
+export function rowText(key: string, value: unknown): string {
+  if (!isDebugRow(key)) return ''
+  if (key === 'boot') return String(value)
+  if (key === 'animals') return animalsText(value)
+  if (key === 'goals') return goalsText(value as readonly GoalRow[] | undefined)
+  return debugRowText(key, value === undefined ? '' : String(value))
+}
+
+export function numberText(value: number | undefined): string {
+  return value === undefined ? '' : String(value)
+}
+
+export function seedText(seed: number | undefined): string {
+  return seed === undefined ? '' : `0x${(seed >>> 0).toString(16)}`
+}
+
+export function animalsText(value: unknown): string {
+  if (Array.isArray(value)) return value.join(', ')
+  return value === undefined ? '' : String(value)
+}
+
+/** Goals read as what is still missing, which is the thing an adult can check against the panel. */
+export function goalsText(goals: readonly GoalRow[] | undefined): string {
+  if (goals === undefined || goals.length === 0) return 'none yet'
+  return goals.map((goal) => `${goal.label} ${goal.needed - goal.current} left`).join(', ')
+}
+
+/** Clicking the button is the whole point, so a click that arrives while it is disabled must
+ *  do nothing rather than advance a level the child never finished. */
+export function nextLevelClick(handler: (() => void) | undefined, enabled: boolean): void {
+  if (!enabled || handler === undefined) return
+  handler()
+}
 
 interface RowDef {
-  key: ValueKey
+  key: string
   label: string
-  initial: () => string
-  /** Game values are not wired up until later milestones. */
-  pending?: boolean
-  /** Multi-line rows (the boot trace) get their own styling. */
+  /** What the row shows before the game has reported anything for it. */
+  initial: (info: DebugInfo) => string
   trace?: boolean
 }
 
 const ROWS: RowDef[] = [
-  { key: 'level', label: 'level', initial: () => '—', pending: true },
-  { key: 'seed', label: 'seed', initial: () => '—', pending: true },
-  { key: 'animals', label: 'animals', initial: () => '—', pending: true },
-  { key: 'bubbles', label: 'bubbles', initial: () => '—', pending: true },
-  { key: 'goals', label: 'goals', initial: () => '—', pending: true },
-  { key: 'fps', label: 'fps', initial: () => '—' },
-  { key: 'display', label: 'display', initial: displayMode },
-  { key: 'viewport', label: 'viewport', initial: viewportText },
-  { key: 'online', label: 'network', initial: () => (navigator.onLine ? 'online' : 'offline') },
-  { key: 'serviceWorker', label: 'service worker', initial: serviceWorkerStatus },
-  {
-    key: 'build',
-    label: 'build',
-    initial: () => `${__APP_VERSION__} · ${__BUILD_TIME__.slice(0, 16).replace('T', ' ')}Z`,
-  },
-  // The previous launch's trace is the only thing a force-close leaves behind.
-  { key: 'boot', label: 'boot trace', initial: () => '—', trace: true },
+  { key: 'level', label: 'level', initial: (info) => textOr(numberText(info.level), 'not started') },
+  { key: 'seed', label: 'seed', initial: (info) => textOr(seedText(info.seed), 'not recorded') },
+  { key: 'animals', label: 'animals', initial: (info) => animalsText(info.animals) },
+  { key: 'rack', label: 'rack', initial: (info) => textOr(numberText(info.bubbles), 'no rack') },
+  { key: 'goals', label: 'remaining goals', initial: (info) => goalsText(info.goals) },
+  { key: 'queue', label: 'tap queue', initial: (info) => textOr(numberText(info.queue), '0') },
+  { key: 'balloons', label: 'balloons popped', initial: (info) => textOr(numberText(info.balloons), '0') },
+  { key: 'particles', label: 'particles alive', initial: (info) => textOr(numberText(info.particles), '0') },
+  { key: 'tier', label: 'frame tier', initial: (info) => textOr(info.tier, 'not running') },
+  { key: 'fps', label: 'fps', initial: () => 'not running' },
+  { key: 'boot', label: 'boot', initial: (info) => traceText(info.bootLog), trace: true },
 ]
 
-export function mountDebugOverlay(root: HTMLElement, info: DebugInfo = {}): DebugOverlay {
-  const panel = element('aside', 'debug')
-  panel.setAttribute('aria-label', 'Debug overlay')
+export function updateFps(now: number, samples: number[]): string {
+  const window = 300
+  const recent = samples.filter((sample) => now - sample <= window)
+  if (recent.length < 2) return 'no readings yet'
 
-  const header = element('header', 'debug__header')
-  const title = element('strong', 'debug__title', 'debug')
-  const toggle = element('button', 'debug__button', 'hide')
+  const last = recent[recent.length - 1]
+  const first = recent[0]
+  if (last === undefined || first === undefined) return 'no readings yet'
+
+  const span = last - first
+  if (span <= 0) return 'no readings yet'
+  return ((recent.length - 1) / (span / 1000)).toFixed(1)
+}
+
+/** The trace is the reason the overlay is worth opening on the tablet, so it is never truncated. */
+function traceText(log: BootLog | undefined): string {
+  if (log === undefined) return 'nothing recorded yet'
+  return traceLines(log.current()).join('\n')
+}
+
+function textOr(value: string | undefined, fallback: string): string {
+  return value === undefined || value === '' ? fallback : value
+}
+
+export function mountDebugOverlay(root: HTMLElement, info: DebugInfo): DebugOverlay {
+  const panel = document.createElement('div')
+  panel.className = 'debug'
+
+  const header = document.createElement('div')
+  header.className = 'debug__header'
+  const title = document.createElement('span')
+  title.className = 'debug__title'
+  title.textContent = 'debug'
+  const toggle = document.createElement('button')
+  toggle.className = 'debug__button'
   toggle.type = 'button'
-  toggle.setAttribute('aria-expanded', 'true')
+  toggle.textContent = 'hide'
+  toggle.addEventListener('click', () => {
+    panel.classList.toggle('debug--collapsed')
+    toggle.textContent = panel.classList.contains('debug--collapsed') ? 'show' : 'hide'
+  })
   header.append(title, toggle)
 
-  const rows = element('dl', 'debug__rows')
-  const values = {} as Record<ValueKey, HTMLElement>
+  const next = document.createElement('button')
+  next.className = 'debug__button'
+  next.type = 'button'
+  next.textContent = 'next level'
+  next.disabled = info.onNextLevel === undefined
+  next.addEventListener('click', () => nextLevelClick(info.onNextLevel, !next.disabled))
+  header.append(next)
+
+  const grid = document.createElement('dl')
+  grid.className = 'debug__rows'
+  const values: Record<string, HTMLElement> = {}
 
   for (const row of ROWS) {
-    const label = element('dt', row.pending ? 'debug__label debug__label--pending' : 'debug__label', row.label)
-    if (row.pending) label.title = 'Wired up in a later milestone'
-    const value = element('dd', valueClass(row), row.initial())
+    const label = document.createElement('dt')
+    label.className = 'debug__label'
+    label.textContent = row.label
+
+    const value = document.createElement('dd')
+    value.className = row.trace ? 'debug__value debug__value--trace' : 'debug__value'
+    value.textContent = row.initial(info)
     values[row.key] = value
-    rows.append(label, value)
+
+    grid.append(label, value)
   }
 
-  const errorBlock = element('section', 'debug__error')
-  errorBlock.append(element('span', 'debug__error-label', 'last error'))
-  const errorValue = element('p', 'debug__error-value', 'none')
-  errorBlock.append(errorValue)
+  const errorRow = document.createElement('div')
+  errorRow.className = 'debug__error'
+  const errorLabel = document.createElement('span')
+  errorLabel.className = 'debug__error-label'
+  errorLabel.textContent = 'last error'
+  const errorValue = document.createElement('p')
+  errorValue.className = 'debug__error-value'
+  errorValue.textContent = 'none'
+  errorRow.append(errorLabel, errorValue)
 
-  const footer = element('footer', 'debug__footer')
-  const nextLevel = element('button', 'debug__button debug__button--next', 'next level')
-  nextLevel.type = 'button'
-  nextLevel.disabled = true
-  nextLevel.title = 'Arrives with levels in M2'
-  footer.append(nextLevel, element('span', 'debug__hint', 'game values land in M1–M2'))
+  const footer = document.createElement('div')
+  footer.className = 'debug__footer'
+  const hint = document.createElement('span')
+  hint.className = 'debug__hint'
+  hint.textContent = 'issue #23'
+  footer.append(hint)
 
-  panel.append(header, rows, errorBlock, footer)
-  root.append(panel)
+  panel.append(header, grid, errorRow, footer)
+  if (root !== null) root.append(panel)
 
-  const setValue = (key: ValueKey, text: string): void => {
-    values[key].textContent = text
-    values[key].classList.remove('debug__value--pending')
-  }
-
-  // M1 knows the seed and the animals in play; the rest arrive with levels in M2.
-  if (info.seed !== undefined) setValue('seed', info.seed.toString(16).padStart(8, '0'))
-  if (info.animals !== undefined) setValue('animals', info.animals.join(' '))
-
-  const setLastError = (message: string): void => {
-    const trimmed = message.trim() || 'unknown error'
-    errorValue.textContent = trimmed.length > 240 ? `${trimmed.slice(0, 237)}…` : trimmed
-    errorValue.title = message
+  const set = (key: string, text: string): string => {
+    const shown = debugRowText(key, text)
+    const value = values[key]
+    if (value === undefined) return shown
+    value.textContent = shown
+    return shown
   }
 
-  // The row that makes the tablet debuggable: what the previous launch persisted, then this
-  // launch's steps as they happen. A force-close ends a run, so the last error on screen is
-  // the one that survived into this launch.
-  let unsubscribeBootLog: (() => void) | null = null
-  if (info.bootLog !== undefined) {
-    const log = info.bootLog
-    setValue('boot', bootText(log))
-    const previous = log.previous()
-    const persistedError = previous === null ? null : previous.lastError
-    if (persistedError !== null && persistedError !== undefined) setLastError(persistedError)
-    unsubscribeBootLog = log.subscribe(() => setValue('boot', bootText(log)))
-  }
-
-  // FPS: sampled twice a second while the overlay is mounted.
-  let frames = 0
-  let sampleStart = performance.now()
-  let frameHandle = 0
-  const sampleFrame = (now: number): void => {
-    frames += 1
-    const elapsed = now - sampleStart
-    if (elapsed >= 500) {
-      setValue('fps', String(Math.round((frames * 1000) / elapsed)))
-      frames = 0
-      sampleStart = now
-    }
-    frameHandle = requestAnimationFrame(sampleFrame)
-  }
-  frameHandle = requestAnimationFrame(sampleFrame)
-
-  const onResize = (): void => {
-    setValue('viewport', viewportText())
-    setValue('display', displayMode())
-  }
-  const onNetwork = (): void => {
-    setValue('online', navigator.onLine ? 'online' : 'offline')
-  }
-  const onServiceWorkerChange = (): void => {
-    setValue('serviceWorker', serviceWorkerStatus())
-  }
-  const onError = (event: ErrorEvent): void => {
-    setLastError(event.message || 'unknown error')
-  }
-  const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
-    setLastError(describeError(event.reason))
-  }
-  const onToggle = (): void => {
-    const collapsed = panel.classList.toggle('debug--collapsed')
-    toggle.textContent = collapsed ? 'show' : 'hide'
-    toggle.setAttribute('aria-expanded', String(!collapsed))
-  }
-  const onKeyDown = (event: KeyboardEvent): void => {
-    // A desktop convenience only; the tablet never sends this.
-    if (event.key === 'd' && event.altKey) onToggle()
-  }
-  const onVisibility = (): void => {
-    // Avoid a huge bogus FPS sample after the tab was in the background.
-    frames = 0
-    sampleStart = performance.now()
-  }
-
-  window.addEventListener('resize', onResize)
-  window.addEventListener('online', onNetwork)
-  window.addEventListener('offline', onNetwork)
-  window.addEventListener('error', onError)
-  window.addEventListener('unhandledrejection', onUnhandledRejection)
-  window.addEventListener('keydown', onKeyDown)
-  document.addEventListener('visibilitychange', onVisibility)
-  toggle.addEventListener('click', onToggle)
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('controllerchange', onServiceWorkerChange)
-  }
+  // FPS is measured by the renderer, so the overlay keeps its own samples and reports them
+  // through `set` like every other row does.
+  const samples: number[] = []
+  const measureFps = (now: number): string => set('fps', updateFps(now, samples.concat([now])))
 
   return {
     element: panel,
-    destroy(): void {
-      cancelAnimationFrame(frameHandle)
-      window.removeEventListener('resize', onResize)
-      window.removeEventListener('online', onNetwork)
-      window.removeEventListener('offline', onNetwork)
-      window.removeEventListener('error', onError)
-      window.removeEventListener('unhandledrejection', onUnhandledRejection)
-      window.removeEventListener('keydown', onKeyDown)
-      document.removeEventListener('visibilitychange', onVisibility)
-      toggle.removeEventListener('click', onToggle)
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.removeEventListener('controllerchange', onServiceWorkerChange)
-      }
-      if (unsubscribeBootLog !== null) unsubscribeBootLog()
-      panel.remove()
+    set,
+    measureFps,
+    reportError(message: string): void {
+      errorValue.textContent = message
     },
   }
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className?: string,
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag)
-  if (className) node.className = className
-  if (text !== undefined) node.textContent = text
-  return node
-}
-
-function valueClass(row: RowDef): string {
-  if (row.pending) return 'debug__value debug__value--pending'
-  if (row.trace) return 'debug__value debug__value--trace'
-  return 'debug__value'
-}
-
-/** Previous run then this one, as plain lines. */
-function bootText(log: BootLog): string {
-  const previous = log.previous()
-  const lines: string[] = previous === null ? [] : traceLines(previous)
-  lines.push(...traceLines(log.current()))
-  return lines.join('\n')
-}
-
-function displayMode(): string {
-  if (hasMatchMedia(window) && window.matchMedia('(display-mode: standalone)').matches) return 'standalone'
-  if (navigator.standalone) return 'standalone'
-  return 'browser'
-}
-
-function viewportText(): string {
-  return `${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio.toFixed(2)}`
-}
-
-function serviceWorkerStatus(): string {
-  if (!('serviceWorker' in navigator)) return 'unsupported'
-  return navigator.serviceWorker.controller ? 'active' : 'registering'
 }

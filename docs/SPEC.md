@@ -207,19 +207,33 @@ Provisional constants (§21 explains how they were estimated and that M5 replace
 |--------|---------------|-------|---------|
 | 1–2    | 4             | 3 + 3 | 12      |
 | 3–6    | 5             | 4 + 4 | 16      |
-| 7–10   | 5             | 6 + 6 | 24      |
-| 11–15  | 6             | 6 + 6 | 29      |
-| 16+    | 6             | 8 + 8 | 39      |
+| 7–8    | 5             | 5 + 5 | 20      |
+| 9–10   | 5             | 6 + 6 | 22      |
+| 11–12  | 6             | 6 + 6 | 29      |
+| 13–15  | 6             | 7 + 7 | 33      |
+| 16+    | 6             | 8 + 8 | 35      |
 
-Level 1 is deliberately over-funded (~12 bubbles for a ~5-tap level) so her first celebration
-is a **big** party and she learns that the rack is a resource, not a countdown she's losing.
-From level 3 the slack narrows. Level 11 is the first level where careless play can plausibly
-end with 2–3 balloons.
+Rows 1–2 and 3–6 are the numbers as they were estimated: level 1 is deliberately over-funded
+(~12 bubbles for a ~5-tap level) so her first celebration is a **big** party and she learns that
+the rack is a resource, not a countdown she's losing. From level 3 the slack narrows, and from
+level 7 every rack is the measured number rather than the estimate — 24 for levels 7–10 is the one
+estimate the measurement contradicts.
 
-**Calibration target, not a guess** (this is what M5's simulator must confirm, and the reason
-the numbers above are allowed to be wrong right now): the `random` policy should end **near
-the floor (1–3 bubbles)** while `greedy` should finish with **≈50–65% of the rack**. That
-spread — not the absolute numbers — is what makes "fewer taps = bigger party" learnable.
+**The floor clause is the sizing rule**, which is how M5 read it: "careless play can plausibly end
+with 2–3 balloons" describes the run that takes the most pops, so the rack is the 90% pop count of
+the `random` policy plus 2 — the 10% smallest leftover is what a rack leaves to the 90% largest pop
+count. Applied, that gives 29 at level 11 and 33 at level 13 exactly, and lands within 1 of the
+numbers above at levels 7–10. Level 11 is the first level where the plausibly smallest run ends
+with 2–3 balloons; at levels 7–10 it already ends with 1, which is why the floor band is asserted
+from level 11.
+
+The two bands only hold together read on different runs, and that is the shape §16.2 has to keep:
+the numeric band and the tier band are read on the **mean** run, the floor clause at **p10**. At the
+plateau the typical run hits the 12-balloon cap for both policies, so the meter's count reads the
+same there and only the tier separates them; the mean run still reads apart (greedy 11.0 balloons,
+random 9.3). A rack tight enough for the count to read apart on the typical run puts random's p10 at
+the floor itself, outside the band — so the ramp takes the band, and the tier is what still tells the
+two policies apart.
 
 ### 9.2 Generator rules
 
@@ -241,7 +255,10 @@ generateLevel(level, sessionSeed):
 ### 9.3 Plateau
 
 After level 16 the numbers stop changing; only the animal roster and goal animals rotate.
-Sessions stay ~30–60s per level forever.
+**Sessions stay ~30–60s per level forever** — read as the goal phase, the part the rules decide.
+The fun tail after the goals stays open-ended by design (§1), so a plateau session measures longer
+than the band end to end (~95s, of which ~50s is the tail); the band is asserted on the goal phase,
+which is what the simulator can actually control.
 
 ---
 
@@ -538,10 +555,24 @@ Headless player over levels 1–30 × 1000 seeded runs, with two policies:
 Reports per level: completion (always 100% by design), mean/median/p10 bubbles left, mean
 taps, level duration estimate. Used to set §9.1 for real.
 
-**Acceptance:** greedy finishes comfortably ahead of random (≥30% more bubbles on average at
-levels 1–6), `greedy` holds ≈50–65% of the rack at every level, and `random` sits near the
-floor at level 11+. If both policies land in the same band, the rack is mis-sized and the
-number must change — not the game.
+**Acceptance**, each clause read on the run it describes:
+
+- greedy finishes comfortably ahead of random — ≥30% more bubbles on the **mean** run at levels
+  1–6 (measured 1.78x at the narrowest);
+- `greedy` holds ≈50–65% of the rack on the mean run, asserted at the levels the ramp is sized
+  against, 7–12 (measured 63/63/60/61/53/54%). Levels 1–6 measure above the band by design,
+  because §9.1 funds them deliberately;
+- `random` sits near the floor at level 11+, at **p10** — the plausibly smallest run, measured 1–3
+  balloons;
+- the party never falls below `medium` on the mean run for either policy, and `greedy` stays `big`
+  through level 12. The tier band cannot be asserted at p10: random's plausibly smallest run reads
+  `small` at every level, 6% at the plateau, where the count saturates at the cap;
+- every rack from level 11 is `random`'s p90 pop count plus 2, within 1, which is the floor clause
+  written as a sizing rule;
+- the goal phase at the plateau stays inside §9.3's 30–60s band (measured 45s).
+
+If both policies land in the same band, the rack is mis-sized and the number must change — not
+the game.
 
 ### 16.3 Device tests
 

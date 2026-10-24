@@ -1,6 +1,6 @@
 import { ANIMALS_BY_ID, type AnimalDef } from '../game/animals'
-import { AUDIO } from '../game/constants'
-import type { AnimalId } from '../game/types'
+import { AUDIO, CELEBRATION } from '../game/constants'
+import type { AnimalId, PartyTier } from '../game/types'
 import type { AudioPlayer } from './player'
 
 /** Major pentatonic offsets used to arpeggiate larger clusters. */
@@ -100,13 +100,25 @@ export function createSynthPlayer(): AudioPlayer {
     )
   }
 
-  function playReshuffle(): void {
+  /**
+   * Filtered noise, the shape the whoosh, the shimmer and a balloon pop all share (SPEC §11).
+   * `peakAt` is optional because the whoosh reads as wind only when the band rises and then
+   * falls; a balloon pop is too short for a peak and sweeps straight down.
+   */
+  function noise(
+    at: number,
+    duration: number,
+    gainValue: number,
+    filterStart: number,
+    filterEnd: number,
+    peakAt?: number,
+    peakHz?: number,
+  ): void {
     const nodes = ready()
     if (nodes === null) return
 
     const { audio, output } = nodes
-    const start = audio.currentTime
-    const frames = Math.max(1, Math.floor(audio.sampleRate * AUDIO.whooshDuration))
+    const frames = Math.max(1, Math.floor(audio.sampleRate * duration))
     const buffer = audio.createBuffer(1, frames, audio.sampleRate)
     const data = buffer.getChannelData(0)
     for (let i = 0; i < data.length; i++) {
@@ -119,20 +131,87 @@ export function createSynthPlayer(): AudioPlayer {
     const filter = audio.createBiquadFilter()
     filter.type = 'bandpass'
     filter.Q.value = 0.7
-    filter.frequency.setValueAtTime(320, start)
-    filter.frequency.exponentialRampToValueAtTime(2600, start + AUDIO.whooshDuration * 0.45)
-    filter.frequency.exponentialRampToValueAtTime(520, start + AUDIO.whooshDuration)
+    filter.frequency.setValueAtTime(filterStart, at)
+    if (peakAt !== undefined && peakHz !== undefined) {
+      filter.frequency.exponentialRampToValueAtTime(peakHz, at + duration * peakAt)
+    }
+    filter.frequency.exponentialRampToValueAtTime(filterEnd, at + duration)
 
     const gain = audio.createGain()
-    gain.gain.setValueAtTime(0.0001, start)
-    gain.gain.exponentialRampToValueAtTime(AUDIO.whooshGain, start + 0.08)
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + AUDIO.whooshDuration)
+    gain.gain.setValueAtTime(0.0001, at)
+    gain.gain.exponentialRampToValueAtTime(gainValue, at + Math.min(0.08, duration * 0.25))
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + duration)
 
     source.connect(filter)
     filter.connect(gain)
     gain.connect(output)
-    source.start(start)
-    source.stop(start + AUDIO.whooshDuration + 0.02)
+    source.start(at)
+    source.stop(at + duration + 0.02)
+  }
+
+  function playReshuffle(): void {
+    const nodes = ready()
+    if (nodes === null) return
+
+    noise(
+      nodes.audio.currentTime + 0.005,
+      AUDIO.whooshDuration,
+      AUDIO.whooshGain,
+      320,
+      520,
+      0.45,
+      2600,
+    )
+  }
+
+  /** A single bubble leaving the rack: one short high tick (SPEC §11). */
+  function playBubble(): void {
+    const nodes = ready()
+    if (nodes === null) return
+    tone(AUDIO.bubblePitch, nodes.audio.currentTime + 0.005, AUDIO.bubbleDuration, AUDIO.bubbleGain, 'sine')
+  }
+
+  /** Ascending pentatonic degrees, so the twelfth balloon is higher than the first but still in tune. */
+  function balloonPitch(index: number): number {
+    const degree = ARPEGGIO_RATIOS[index % ARPEGGIO_RATIOS.length] as number
+    const octave = Math.min(Math.floor(index / ARPEGGIO_RATIOS.length), 1)
+    return CELEBRATION.balloonPitchHz * degree * Math.pow(2, octave)
+  }
+
+  function playBalloon(index: number): void {
+    const nodes = ready()
+    if (nodes === null) return
+
+    const start = nodes.audio.currentTime + 0.005
+    noise(start, AUDIO.balloonNoiseDuration, AUDIO.balloonNoiseGain, 2400, 600)
+    tone(balloonPitch(index), start + 0.02, 0.14, 0.12, 'triangle')
+  }
+
+  /**
+   * Completion cue (SPEC §10.1, §11). Big and medium parties get the rising arpeggio with a
+   * shimmer; a small one gets the soft two-note chime, which is quieter but not sad — there is
+   * no fail state, so nothing here sounds like a mistake.
+   */
+  function playCompletion(tier: PartyTier): void {
+    const nodes = ready()
+    if (nodes === null) return
+
+    const start = nodes.audio.currentTime + 0.01
+    if (tier === 'small') {
+      for (let note = 0; note < AUDIO.chimeNotes.length; note++) {
+        const pitch = AUDIO.chimeNotes[note]
+        if (pitch === undefined) continue
+        tone(pitch, start + note * AUDIO.chimeSpacing, AUDIO.chimeDuration, AUDIO.chimeGain, 'sine')
+      }
+      return
+    }
+
+    for (let note = 0; note < AUDIO.fanfareNotes.length; note++) {
+      const pitch = AUDIO.fanfareNotes[note]
+      if (pitch === undefined) continue
+      tone(pitch, start + note * AUDIO.fanfareNoteSpacing, AUDIO.fanfareNoteDuration, AUDIO.fanfareNoteGain, 'triangle')
+    }
+    noise(start, 1.2, AUDIO.shimmerGain, AUDIO.shimmerFilterStart, AUDIO.shimmerFilterEnd)
   }
 
   function setMuted(next: boolean): void {
@@ -145,6 +224,9 @@ export function createSynthPlayer(): AudioPlayer {
     playPop,
     playInvalid,
     playReshuffle,
+    playBubble,
+    playBalloon,
+    playCompletion,
     setMuted,
     isMuted: () => muted,
   }

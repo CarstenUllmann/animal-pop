@@ -12,6 +12,9 @@
  * its own key.
  */
 
+import type { KeyValueStore } from '../game/types'
+import { localStorageStore } from './storage'
+
 export const STORAGE_KEY = 'pop-pals.boot.v1'
 
 /** Long enough for a whole boot, short enough to stay readable in the overlay. */
@@ -32,13 +35,8 @@ export interface BootRun {
   lastError: string | null
 }
 
-/** The storage the trace is persisted behind. Real storage is wrapped in try/catch. */
-export interface BootStorage {
-  /** Null when the key is absent or the read is refused. */
-  read(key: string): string | null
-  /** False when the write is refused. */
-  write(key: string, value: string): boolean
-}
+/** The storage the trace is persisted behind; the save in §14.1 uses the same shape. */
+export type BootStorage = KeyValueStore
 
 export interface Clock {
   now(): number
@@ -65,7 +63,7 @@ export interface BootLog {
 
 export function createBootLog(options: BootLogOptions = {}): BootLog {
   // An absent storage means "no storage", not `localStorage`; a fake can also be injected.
-  const storage = options.storage === undefined ? defaultStorage() : options.storage
+  const storage = options.storage === undefined ? localStorageStore() : options.storage
   const clock = options.clock === undefined ? { now: () => Date.now() } : options.clock
   const maxSteps = options.maxSteps === undefined ? MAX_STEPS : options.maxSteps
 
@@ -183,30 +181,4 @@ function readRun(storage: BootStorage): BootRun | null {
   }
 }
 
-/**
- * The persisted store, reached through `typeof` because Chrome 61 has no global-object alias
- * (Chrome 71) and a WebView can deny `localStorage` outright. Reading it must not throw: this is
- * the code that has to survive a force-close.
- */
-function defaultStorage(): BootStorage {
-  const store = typeof localStorage === 'object' ? localStorage : null
-  return {
-    read(key: string): string | null {
-      if (store === null) return null
-      try {
-        return store.getItem(key)
-      } catch (unused) {
-        return null
-      }
-    },
-    write(key: string, value: string): boolean {
-      if (store === null) return false
-      try {
-        store.setItem(key, value)
-        return true
-      } catch (unused) {
-        return false
-      }
-    },
-  }
-}
+

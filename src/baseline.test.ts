@@ -104,6 +104,44 @@ function withoutCommentsAndStrings(text: string): string {
   return out
 }
 
+/**
+ * CSS the engine cannot use. The build target transpiles nothing here: an unknown property or
+ * function is simply dropped, which can be silent (an `aspect-ratio` board collapses to zero
+ * height), so the stylesheet is held to the same baseline as the scripts.
+ */
+const TOO_NEW_CSS: Array<[string, number]> = [
+  ['aspect-ratio', 88],
+  ['inset:', 87],
+  ['gap:', 84],
+  ['color-scheme', 81],
+  ['clamp(', 79],
+  ['min(', 79],
+  ['max(', 79],
+  ['env(', 69],
+  ['overscroll-behavior', 63],
+]
+
+/** Shipped stylesheets, held to the same baseline as the shipped scripts. */
+function shippedStyles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.css'))
+    .map((entry) => join(dir, entry.name))
+}
+
+function cssOffenders(raw: string, name: string): string[] {
+  const found: string[] = []
+  // A comment may name a feature we deliberately avoid, so scan declarations only.
+  const text = raw.replace(/\/\*[\s\S]*?\*\//g, '')
+  for (const [token, chrome] of TOO_NEW_CSS) {
+    // `grid-gap` is Chrome 57 and is allowed; only the shorthand `gap` is too new.
+    // `\b` keeps `minmax()` (Chrome 57) from reading as `max()`.
+    const escaped = token.replace(/[()]/g, '\\$&')
+    const pattern = token === 'gap:' ? new RegExp(`(^|[\\s{;])${escaped}`, 'i') : new RegExp(`\\b${escaped}`, 'i')
+    if (pattern.test(text)) found.push(`${name}: ${token} (Chrome ${chrome})`)
+  }
+  return found
+}
+
 function offendersIn(text: string, name: string): string[] {
   const found: string[] = []
   text.split('\n').forEach((line, position) => {
@@ -152,6 +190,14 @@ describe('engine baseline', () => {
     const offenders: string[] = []
     for (const file of files) {
       offenders.push(...offendersIn(withoutCommentsAndStrings(readFileSync(file, 'utf8')), file.slice(assets.length + 1)))
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('styles nothing the engine cannot use', () => {
+    const offenders: string[] = []
+    for (const file of shippedStyles(SRC)) {
+      offenders.push(...cssOffenders(readFileSync(file, 'utf8'), file.slice(SRC.length + 1)))
     }
     expect(offenders).toEqual([])
   })
