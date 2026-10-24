@@ -204,6 +204,15 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo): DebugOver
     grid.append(label, value)
   }
 
+  // Issue #18: every listed field has to be live, and the boot row is the one that changes after mount.
+  // The log tells us when it moves, so the row is not a snapshot taken at mount.
+  const bootRow = values['boot']
+  if (info.bootLog !== undefined && bootRow !== undefined) {
+    info.bootLog.subscribe(() => {
+      bootRow.textContent = traceText(info.bootLog)
+    })
+  }
+
   const errorRow = document.createElement('div')
   errorRow.className = 'debug__error'
   const errorLabel = document.createElement('span')

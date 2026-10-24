@@ -29,7 +29,9 @@ class FakeOscillator extends FakeNode {
   type = 'sine'
   frequency = new FakeParam()
   start(): void {}
-  stop(): void {}
+  stop(): void {
+    FakeContext.stops += 1
+  }
 }
 
 class FakeBuffer {
@@ -41,7 +43,9 @@ class FakeBuffer {
 class FakeBufferSource extends FakeNode {
   buffer: FakeBuffer | null = null
   start(): void {}
-  stop(): void {}
+  stop(): void {
+    FakeContext.stops += 1
+  }
 }
 
 class FakeFilter extends FakeNode {
@@ -54,11 +58,14 @@ class FakeContext {
   static instances: FakeContext[] = []
   static oscillators = 0
   static bufferSources = 0
+  /** Every `stop()` call, so a test can tell the node's own scheduled end from a cancellation. */
+  static stops = 0
 
   static reset(): void {
     FakeContext.instances = []
     FakeContext.oscillators = 0
     FakeContext.bufferSources = 0
+    FakeContext.stops = 0
   }
 
   readonly gains: FakeGain[] = []
@@ -181,5 +188,24 @@ describe('createSynthPlayer', () => {
     expect(master.gain.value).toBe(AUDIO.masterGain)
     player.playPop('cat', 2)
     expect(FakeContext.oscillators).toBe(2)
+  })
+
+  it('cancels what is still sounding when the party ends, so the cue cannot bleed into the next level (issue #14)', () => {
+    const player = createSynthPlayer()
+    player.unlock()
+
+    player.playCompletion('big')
+    // Four fanfare notes plus the shimmer, each with its own scheduled end.
+    const scheduled = FakeContext.stops
+    expect(scheduled).toBe(AUDIO.fanfareNotes.length + 1)
+
+    // The celebration stops the party when the play arrow is tapped early: the same nodes are stopped
+    // a second time, now at the current time rather than at their scheduled one.
+    player.stop()
+    expect(FakeContext.stops).toBe(scheduled * 2)
+
+    // Nothing left to cancel, so a second stop is quiet and the list does not keep growing.
+    player.stop()
+    expect(FakeContext.stops).toBe(scheduled * 2)
   })
 })

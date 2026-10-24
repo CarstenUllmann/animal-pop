@@ -28,6 +28,38 @@ describe('level ramp', () => {
     expect(rampForLevel(16)).toBe(LEVEL_RAMP[6])
   })
 
+  it('produces the numbers every band is specified with, level by level', () => {
+    // Asserted as SPEC 9.1 writes the table. Rows 1-2 and 3-6 are the estimates 21 explains; the rows from
+    // level 7 are what the 16.2 simulator measured, which is what 9.1 says the ramp is written from.
+    // `sim.test.ts` asserts the bands as behaviour - this asserts them as data, so a change to the ramp
+    // cannot quietly move the numbers the spec quotes.
+    const bands = [
+      { levels: [1, 2], types: 4, goalEach: 3, bubbles: 12 },
+      { levels: [3, 6], types: 5, goalEach: 4, bubbles: 16 },
+      { levels: [7, 8], types: 5, goalEach: 5, bubbles: 20 },
+      { levels: [9, 10], types: 5, goalEach: 6, bubbles: 22 },
+      { levels: [11, 12], types: 6, goalEach: 6, bubbles: 29 },
+      { levels: [13, 15], types: 6, goalEach: 7, bubbles: 33 },
+      { levels: [16, 17], types: 6, goalEach: 8, bubbles: 35 },
+    ]
+    for (const band of bands) {
+      for (const level of band.levels) {
+        expect(typesForLevel(level)).toBe(band.types)
+        expect(goalTargetForLevel(level)).toBe(band.goalEach)
+        expect(bubblesForLevel(level)).toBe(band.bubbles)
+
+        const state = createLevel(level, 0x5eb00b1e, POOL)
+        expect(state.roster).toHaveLength(band.types)
+        expect(state.bubbles).toBe(band.bubbles)
+        expect(state.bubblesStart).toBe(band.bubbles)
+        for (const goal of state.goals) {
+          expect(goal.target).toBe(band.goalEach)
+          expect(goal.remaining).toBe(band.goalEach)
+        }
+      }
+    }
+  })
+
   it('plateaus at level 16, so only the roster and goals rotate afterwards', () => {
     const plateau = LEVEL_RAMP[LEVEL_RAMP.length - 1]
     for (const level of [17, 20, 30, 60]) {

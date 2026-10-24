@@ -70,9 +70,10 @@ body {
   cursor: default;
 }
 
+/* The shell is the grid in `.game`, so this rule only sizes the root. It has to not set `display` here:
+   `#app` is more specific than `.game`, and a flex declaration on the id would beat the grid the game
+   needs. The fallback path is the same element without the `.game` class, where a plain block is fine. */
 #app {
-  display: flex;
-  flex-direction: column;
   width: 100%;
   height: 100%;
 }
@@ -81,21 +82,31 @@ body {
 /* Layout (SPEC §13)                                                   */
 /* ------------------------------------------------------------------ */
 
-/* Landscape: board on top, panel below. Portrait: panel below the board, which is
-   the fallback layout, and the celebration layer gets its own band. */
+/* SPEC §13 (issue #10): the panel is the left column in landscape and stacks above the board in
+   portrait (issue #19), with the board square and centred in the space that is left. The fractions come
+   from ui/layout.ts rather than from fixed pixels here. Chrome 61 has no custom properties (SPEC §6), so
+   the plain value is the fallback and the `var` line is what the game overrides on engines that read it. */
 .game {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 30% 70%;
+  grid-template-columns: calc(var(--panel-width-fraction, 0.3) * 100%) 1fr;
+  grid-template-rows: 100% 0%;
+  grid-template-rows: calc(var(--panel-height-fraction, 1) * 100%) 1fr;
   flex: 1 1 auto;
   min-height: 0;
 }
 
+/* The party is an overlay over the board rather than a band below it, so the board stays visible under
+   the dim (SPEC §10, issue #12). That is also what makes the 90 CSS px cell reachable on a 600 CSS px
+   height: the board has the whole row, and the dim sits on top of it. */
 .board-area {
-  flex: 0 0 auto;
+  grid-row: 1;
+  grid-column: 2;
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding-top: 1rem;
+  padding: 1rem;
 }
 
 /* Chrome 61 does not know `aspect-ratio` (Chrome 88), so the board is sized from the cell. */
@@ -246,15 +257,19 @@ body {
 /* Celebration layer (SPEC §13)                                        */
 /* ------------------------------------------------------------------ */
 
-/* SPEC §10.1: the party shows on top of the board, which stays visible under it. The dim is a
-   scrim on the layer itself rather than a class on the board - `:has()` is Chrome 105, and the
-   celebration module has no board element to toggle. It works because the layer is mounted inside
-   the board area, which is the rect `ui/celebration.ts` measures. */
+/* SPEC §10.1 (issue #12): the party is an overlay over the board, which stays visible under it. The dim
+   is a scrim on the layer itself rather than a class on the board - `:has()` is Chrome 105, and the
+   celebration module has no board element to toggle. It works because the layer is mounted inside the
+   board area, which is the rect `ui/celebration.ts` measures, so the same element has to be resized on
+   rotation (issue #19). The game appends the board after the party, so the layer needs its own stacking
+   order to sit above it rather than under it. */
 .celebration {
-  position: relative;
-  width: 100%;
-  min-height: 40vh;
-  flex: 1 1 auto;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -264,7 +279,6 @@ body {
 
 /* Flex `gap` is Chrome 84, so the celebration row spaces its children with margins. */
 .celebration > * + *,
-.rack > * + *,
 .goals > * + * {
   margin-left: 0.7rem;
 }
@@ -278,8 +292,8 @@ body {
   pointer-events: none;
 }
 
-/* The canvas `ui/celebration.ts` actually makes. It is the scrim, so the taps still reach the
-   balloons: the layer itself cannot be tapped. */
+/* The canvas `ui/celebration.ts` actually makes. The dim belongs to the celebration root, not to this
+   element, and the canvas cannot be tapped, so taps still reach the balloons. */
 .particle-layer {
   position: absolute;
   top: 0;
@@ -355,15 +369,19 @@ body {
   }
 }
 
-/* The play arrow, SPEC §10.1: it appears after the fanfare has run, not at the same time, and the
-   pulse is an adult-visible affordance, so reduced motion keeps the arrow still. The delay is the
-   custom property at the top of this file, mirroring CELEBRATION.playButtonDelayMs; the literal is
-   the Chrome 61 fallback. The arrow is in the DOM from the moment the party starts, so it is
-   tappable the instant it is visible (issue #13). */
+/* The play arrow, SPEC §10.1 (issue #13): it appears after the fanfare has run, not at the same time, and
+   the pulse is an adult-visible affordance, so reduced motion keeps the arrow still. The delay is the
+   custom property at the top of this file, mirroring CELEBRATION.playButtonDelayMs; the literal is the
+   Chrome 61 fallback. The arrow is in the DOM from the moment the party starts, and `next--ready` is the
+   step that both shows it and lets it be hit, so it is tappable the instant it is visible. */
 .next {
   position: relative;
   width: 90px;
   height: 90px;
+  width: var(--play-px, 90px);
+  height: var(--play-px, 90px);
+  min-width: var(--tap-min-px, 64px);
+  min-height: var(--tap-min-px, 64px);
   padding: 0;
   border: 0;
   border-radius: 24%;
@@ -372,6 +390,8 @@ body {
   cursor: pointer;
   color: var(--yellow);
   touch-action: manipulation;
+  opacity: 0;
+  pointer-events: none;
   animation: play-appear 300ms ease-out both;
   animation-delay: 1500ms;
   animation-delay: var(--play-button-delay);
@@ -382,6 +402,14 @@ body {
   width: 100%;
   height: 100%;
   fill: currentColor;
+}
+
+/* The ready class is what the module adds when the fanfare has run, so the fade-in must not inherit the
+   delay again. Visibility and hit-testing change in the same step (issue #13). */
+.next--ready {
+  opacity: 1;
+  pointer-events: auto;
+  animation-delay: 0s;
 }
 
 .next--pulsing {
@@ -395,21 +423,31 @@ body {
 /* Panel (SPEC §13)                                                    */
 /* ------------------------------------------------------------------ */
 
+/* SPEC §13 (issue #10): the panel is the left column in landscape and the top row in portrait, and it
+   never scrolls - the rack wraps inside it instead of pushing anything off screen. The sizes come from
+   ui/layout.ts, with the plain values as the Chrome 61 fallback (SPEC §6). */
 .panel {
+  grid-row: 1;
+  grid-column: 1;
   position: relative;
   z-index: 5;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 0;
   padding: 0.8rem 1rem;
   background: var(--panel);
-  border-top: 1px solid rgba(123, 223, 242, 0.2);
+  border-right: 1px solid rgba(123, 223, 242, 0.2);
 }
 
+/* SPEC §13: the level label has a reserved place at least as wide as the smallest tap target, and it is
+   also the long-press target, so nothing else may sit on top of it. */
 .panel__level {
   display: flex;
   flex-direction: column;
   align-items: center;
   min-width: 4rem;
+  min-height: var(--tap-min-px, 64px);
   cursor: pointer;
 }
 
@@ -429,10 +467,13 @@ body {
   color: var(--muted);
 }
 
+/* Issue #19: in portrait the two goal cards sit side by side, so they are flowed rather than stacked, and
+   they wrap when the panel is narrower than both cards. */
 .panel__goals {
   display: flex;
-  flex: 1 1 auto;
+  flex-wrap: wrap;
   align-items: center;
+  align-self: stretch;
   min-width: 0;
 }
 
@@ -477,9 +518,11 @@ body {
   object-fit: contain;
 }
 
-/* The ring is what she reads; the numeral is the adult backup (SPEC §8.1). */
+/* The ring is what she reads; the numeral is the adult backup (SPEC §8.1). Its size comes from
+   ui/layout.ts, which scales it with the cell inside the bounds SPEC §13 gives. */
 .goal__numeral {
   font-size: 32px;
+  font-size: var(--goal-px, 32px);
   font-weight: 700;
   color: var(--cream);
   margin-left: 0.5rem;
@@ -494,10 +537,15 @@ body {
   color: var(--yellow);
 }
 
-/* SPEC §13/§8.1: the rack shows the full rack, so spent slots read as gaps. */
+/* SPEC §13/§8.1 (issue #8): the rack shows the level's whole starting size, so a spent bubble reads as a
+   gap. It is a wrapping grid rather than one row: the plateau rack is 35 bubbles (SPEC §9.1, measured by
+   the simulator), which no panel that must not scroll can show in a single row. Issue #19's "two lines"
+   is what the early levels look like, not what level 11 is. */
 .rack {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(4, 22px);
+  grid-template-columns: repeat(var(--rack-columns, 4), var(--bubble-px, 22px));
+  align-self: stretch;
   padding: 0.5rem 0.8rem;
   margin-left: 0.6rem;
   border-radius: 0.6rem;
@@ -506,9 +554,12 @@ body {
 }
 
 .rack__bubble {
+  position: relative;
   width: 22px;
   height: 22px;
-  margin-right: 6px;
+  width: var(--bubble-px, 22px);
+  height: var(--bubble-px, 22px);
+  margin-bottom: 6px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, var(--pink), rgba(255, 143, 163, 0.35));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
@@ -519,9 +570,22 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
-/* The bubble that has just been spent pops once, then stays a gap. */
+/* Issue #8.2: the bubble that has just been spent sparkles in the same frame as the pop it pays for,
+   because the game renders the panel before it animates the pop. Then it stays a gap. */
 .rack__bubble--just-spent {
   animation: bubble-pop 260ms ease-out;
+}
+
+.rack__bubble--just-spent::after {
+  position: absolute;
+  top: -18%;
+  right: -18%;
+  bottom: -18%;
+  left: -18%;
+  content: '';
+  border: 1px solid rgba(255, 247, 214, 0.9);
+  border-radius: 50%;
+  animation: bubble-sparkle 260ms ease-out forwards;
 }
 
 @keyframes bubble-pop {
@@ -530,6 +594,17 @@ body {
   }
   to {
     transform: scale(1);
+  }
+}
+
+@keyframes bubble-sparkle {
+  from {
+    opacity: 0.9;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.3);
   }
 }
 
@@ -553,16 +628,19 @@ body {
   }
 }
 
-/* SPEC §11 (issue #17): the mute toggle is the only chrome on screen with no text, so the icon
-   carries the state on its own and `aria-pressed` carries the same fact for a screen reader. It
-   is a 64 CSS px target and sits in the party band's top-right, which is the one place it cannot
-   overlap the board. */
+/* SPEC §11 (issue #17): the mute toggle is the only chrome on screen with no text, so the icon carries the
+   state on its own and `aria-pressed` carries the same fact for a screen reader. It is a 64 CSS px target
+   in the panel's top-right corner, which is the one place it can never overlap the board (issue #17.5):
+   the panel is a column in landscape and a row above the board in portrait, so the corner is always the
+   panel's own, never the board's. */
 .mute {
   position: absolute;
   top: 0.5rem;
   right: 0.5rem;
   width: 64px;
   height: 64px;
+  width: var(--tap-min-px, 64px);
+  height: var(--tap-min-px, 64px);
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -645,19 +723,23 @@ body {
 /* Portrait fallback                                                   */
 /* ------------------------------------------------------------------ */
 
-body.is-portrait .board-area {
-  flex: 0 0 auto;
-  padding-top: 0.5rem;
+/* ui/layout.ts puts the orientation and the too-small flag on the app element, which is the game root, so
+   these selectors have to be written against it rather than against body. In portrait the panel is the row
+   above the board and the board stays square in what is left, which is the placement the fractions already
+   describe (issue #19); the celebration is an overlay over the board in both orientations. */
+.game.is-portrait .board-area {
+  grid-row: 2;
+  grid-column: 1;
 }
 
-/* Portrait puts the celebration band between board and panel, so the panel stays reachable. */
-body.is-portrait .celebration {
-  min-height: 45vh;
+.game.is-portrait .panel {
+  border-right: 0;
+  border-bottom: 1px solid rgba(123, 223, 242, 0.2);
 }
 
 /* SPEC §13: the target tablet is landscape 1024x600, so a cell below the tap target
    means the device is smaller than the spec assumes. Show nothing dramatic - just flag it. */
-body[data-tap-target='too-small'] .panel::after {
+.game[data-tap-target='too-small'] .panel::after {
   content: 'small screen';
   font-size: 0.6rem;
   letter-spacing: 0.08em;
@@ -670,9 +752,11 @@ body[data-tap-target='too-small'] .panel::after {
 /* ------------------------------------------------------------------ */
 
 @media (prefers-reduced-motion: reduce) {
+  /* The progress ring's own transition. `.ring__arc` is a name the panel never produces: the ring the
+     game draws is `.goal__ring-fill` in ui/panelView.ts, so this is the selector that actually fires. */
   .tile__face,
   .tile::before,
-  .ring__arc {
+  .goal__ring-fill {
     transition: none;
   }
 
@@ -683,6 +767,7 @@ body[data-tap-target='too-small'] .panel::after {
 
   .next,
   .next--pulsing,
+  .next--ready,
   .balloon svg {
     animation: none;
   }
@@ -697,6 +782,17 @@ body[data-tap-target='too-small'] .panel::after {
 
   .balloon--popped {
     transition: none;
+  }
+
+  /* The rack sparkle is a ring that travels outward, so reduced motion drops the ring and keeps the fact:
+     the spent bubble stays a gap, which is the visual twin of the bubble tick (SPEC section 11). */
+  .rack__bubble--just-spent,
+  .rack__bubble--just-spent::after {
+    animation: none;
+  }
+
+  .rack__bubble--just-spent::after {
+    display: none;
   }
 
   .particle-layer {
@@ -843,6 +939,9 @@ body[data-tap-target='too-small'] .panel::after {
    the game itself never started, so it stays as simple as possible. Chrome 61 syntax only:
    no CSS custom properties, no clamp, no gradients, no animation. */
 .fallback {
+  /* The root still carries `.game`, so the message spans the whole grid rather than the panel column. */
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
   max-width: 26rem;
   margin: 1.5rem auto;
   padding: 1rem;

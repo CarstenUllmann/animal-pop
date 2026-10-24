@@ -44,6 +44,7 @@ function fakePlayer(muted: boolean, order: string[]): AudioPlayer {
     playBubble: noop,
     playBalloon: noop,
     playCompletion: noop,
+    stop: noop,
     setMuted: (next: boolean) => {
       order.push('setMuted')
       muted = next

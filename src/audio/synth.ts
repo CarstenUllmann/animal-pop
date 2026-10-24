@@ -18,6 +18,41 @@ export function createSynthPlayer(): AudioPlayer {
   let master: GainNode | null = null
   let muted = false
 
+  /**
+   * Nodes that have started but not finished, each with the time it is scheduled to end at.
+   * `stop()` cancels them (SPEC §10.1, issue #14): a fanfare still running when she taps the play
+   * arrow must not bleed into the next level. Entries are pruned by their own end time rather than by
+   * `onended`, so a long session does not keep every chime it has ever played, and nothing here needs
+   * an API the engine baseline does not have.
+   */
+  const sounding: Array<{ node: { stop(when?: number): void }; endsAt: number }> = []
+
+  function track(node: { stop(when?: number): void }, endsAt: number): void {
+    prune()
+    sounding.push({ node, endsAt })
+  }
+
+  function prune(): void {
+    if (context === null) return
+    for (let i = sounding.length - 1; i >= 0; i--) {
+      const entry = sounding[i]
+      if (entry !== undefined && entry.endsAt <= context.currentTime) sounding.splice(i, 1)
+    }
+  }
+
+  function stop(): void {
+    if (context === null) return
+    const now = context.currentTime
+    for (const entry of sounding) {
+      try {
+        entry.node.stop(now)
+      } catch (unused) {
+        // Some engines throw when a node that already finished is stopped again; that is not an error.
+      }
+    }
+    sounding.length = 0
+  }
+
   function unlock(): void {
     if (context === null) {
       try {
@@ -69,6 +104,7 @@ export function createSynthPlayer(): AudioPlayer {
     gain.connect(nodes.output)
     osc.start(at)
     osc.stop(at + duration + 0.03)
+    track(osc, at + duration + 0.03)
   }
 
   function playPop(animalId: AnimalId, count: number): void {
@@ -147,6 +183,7 @@ export function createSynthPlayer(): AudioPlayer {
     gain.connect(output)
     source.start(at)
     source.stop(at + duration + 0.02)
+    track(source, at + duration + 0.02)
   }
 
   function playReshuffle(): void {
@@ -227,6 +264,7 @@ export function createSynthPlayer(): AudioPlayer {
     playBubble,
     playBalloon,
     playCompletion,
+    stop,
     setMuted,
     isMuted: () => muted,
   }

@@ -104,9 +104,13 @@ export function createPanelView(): PanelView {
     bubbles.forEach((bubble, position) => {
       if (position < state.bubbles) {
         bubble.classList.remove('rack__bubble--spent')
+        // The sparkle belongs to one pop, so it cannot survive into the next render or into the refill
+        // at the start of a level (issue #8).
+        bubble.classList.remove('rack__bubble--just-spent')
         return
       }
-      // A bubble that was full before this render is the one that just popped.
+      // A bubble that was full before this render is the one that just popped, and it is the only place
+      // the sparkle is added: the game calls this in the same frame as the pop it pays for.
       if (!bubble.classList.contains('rack__bubble--spent')) {
         bubble.classList.add('rack__bubble--spent', 'rack__bubble--just-spent')
       }

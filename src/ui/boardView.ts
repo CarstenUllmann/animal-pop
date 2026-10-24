@@ -19,6 +19,11 @@ export interface BoardView {
 
 export interface BoardViewOptions {
   onTap(index: number): void
+  /**
+   * The goal animals, so a tile can carry the glow SPEC §8.3 asks for. It is read per tile rather
+   * than once at mount, because tiles are created as the board refills.
+   */
+  goalAnimals: () => readonly string[]
 }
 
 const REDUCED_MOTION =
@@ -70,6 +75,8 @@ export function createBoardView(options: BoardViewOptions): BoardView {
     const tile = document.createElement('button')
     tile.type = 'button'
     tile.className = 'tile'
+    // SPEC §8.3: the animals she is collecting read as different, so she can see what matters.
+    if (options.goalAnimals().indexOf(animal) >= 0) tile.classList.add('tile--goal')
     tile.tabIndex = -1
     tile.dataset.index = String(index)
     tile.dataset.animal = animal

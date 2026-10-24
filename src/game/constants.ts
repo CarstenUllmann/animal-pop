@@ -124,21 +124,31 @@ export const AUDIO = {
  * module works from, so they live with the other tunables rather than in the stylesheet.
  */
 export const LAYOUT = {
-  /** Board at most 60% of the viewport height. */
-  boardFraction: 0.6,
-  /** Celebration layer at most 40%, which is also the panel's share. */
-  celebrationFraction: 0.4,
+  /** Panel column in landscape: 28-32% of the width, goals then rack below them (SPEC §13, §8.2). */
+  panelWidthFraction: 0.30,
+  /**
+   * Board share of the height. The celebration is an overlay over the board (SPEC §10), so it no
+   * longer needs a band of its own, and the board keeps enough height for the 90 CSS px cell §13
+   * asks for: 6 rows x 90 = 540 of the target device's 600.
+   */
+  landscapeBoardFraction: 0.90,
   /** Cell bounds; the cell is sized from the board area within them. */
   cellMinPx: 60,
   cellMaxPx: 128,
-  /* Portrait puts the panel below the board, so the board gives some of its share back (SPEC §13).
+  /* Portrait puts the panel above the board, so the board gives most of that share back (SPEC §13).
      Written as whole fractions rather than `.55`, because the minifier turns `x ? .55 : y` into
      `x?.55:y`, which the engine-baseline test reads as optional chaining. */
   portraitBoardFraction: 0.55,
-  portraitCelebrationFraction: 0.45,
   /** Smallest tappable element: 48 device px, which is 90 CSS px at the tablet's density. */
   tapTargetCssPx: 90,
   tapTargetDevicePx: 48,
+  /** Rack bubbles (SPEC §8.2): 22-26 CSS px, 3-4 per row, picked from the width the panel has. */
+  bubblePxMin: 22,
+  bubblePxMax: 26,
+  rackColumnsMin: 3,
+  rackColumnsMax: 4,
+  /** Nothing interactive is smaller than this (SPEC §13): the mute target and the numeral's box. */
+  interactiveMinPx: 64,
   /** Device pixel ratio cap (SPEC §5). */
   dprMax: 2,
 } as const
@@ -160,9 +170,14 @@ export const PARTICLES = {
   perBurst: 120,
   /** The tier the celebration degrades to when frames run long (SPEC §10.2). */
   degradePerBurst: 60,
-  speed: 3.2,
-  gravity: 0.05,
-  life: 64,
+  /**
+   * Per-second units, because `draw()` integrates with `dt` in seconds (issue #12). 192 px/s is the
+   * 3.2 px/frame the burst was first sketched at, and 1.05s is its 64 frames. Read as per-frame
+   * against a per-second clock, a burst lived for about a minute and crawled instead of flashing.
+   */
+  speedPxPerSecond: 192,
+  gravityPxPerSecond: 180,
+  lifeSeconds: 1.05,
   /** The radius the burst is drawn at, in CSS px. */
   particleSize: 3,
   /** One ambient burst every this many frames once the party is idle (SPEC §10.1 phase 4). */
@@ -170,6 +185,12 @@ export const PARTICLES = {
   /** 60fps budget; over it for `degradeAfterMs` drops the celebration to 30fps. */
   frameBudgetMs: 16.7,
   degradeAfterMs: 1000,
+  /**
+   * A tier this long inside the budget brings the 60fps tier back (issue #12). §10.2 only says the
+   * layer drops, so without this the degrade is a ratchet: one bad stretch on the tablet would be
+   * the tier for the rest of the session.
+   */
+  recoverAfterMs: 3000,
 } as const
 
 /** Celebration timings, in ms (SPEC §10.1): balloons one at a time, ▶ after a beat. */

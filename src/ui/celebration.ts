@@ -1,4 +1,4 @@
-import { CELEBRATION, MAX_BALLOONS, PARTICLES } from '../game/constants'
+import { CELEBRATION, LAYOUT, MAX_BALLOONS, PARTICLES } from '../game/constants'
 import type { AudioPlayer } from '../audio/player'
 import type { PartyTier, Rng } from '../game/types'
 import { hasMatchMedia } from './capabilities'
@@ -9,12 +9,20 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 /**
  * The celebration layer (SPEC §10, issues #12 and #13). Balloons rise one at a time so the scene
  * does not arrive as one flat wall, each chimes on entry and pops on tap, and popping the last one
- * brings a whole new set. The play button appears after the fanfare has run, not at the same time.
+ * brings a whole new set. The number of balloons is the bubbles she has left, capped at twelve. The
+ * play button appears after the fanfare has run, not at the same time, and it becomes visible and
+ * tappable in the same step.
  *
  * This is the only particle system in the game. Density is capped by `PARTICLES` and the burst
  * objects come from `ui/pool.ts`, which never grows past its capacity, so a burst cannot make the
  * old WebView stutter (SPEC §5). When frames run over budget for `degradeAfterMs` the layer drops
- * to the 30fps tier for good, and that tier only reaches CSS when this module writes `data-tier`.
+ * to the 30fps tier for good, and comes back after `recoverAfterMs` of frames inside the budget: one
+ * bad stretch on the tablet would otherwise be the tier for the rest of the session (issue #12). That
+ * tier only reaches CSS when this module writes `data-tier`.
+ *
+ * The layer is an overlay over the board rather than a band below it: the board stays visible under the
+ * dim, and this module's root element is the rect the canvas measures, so that element has to be
+ * resized when the tablet turns (issue #19).
  *
  * Random is allowed here for visual jitter only, never for gameplay, and it comes through the
  * injected `Rng` so a session can be replayed (SPEC §2).
@@ -25,6 +33,8 @@ export type FrameTier = '60fps' | '30fps'
 export interface CelebrationLayer {
   start(): void
   stop(): void
+  /** Called on rotation: the canvas is sized from the layer's rect, so a portrait turn has to resize it (SPEC §13, issue #19). */
+  resize(): void
   /** The tier in effect, which is what the debug overlay reports (issue #18). */
   frameTier(): FrameTier
   balloonCount(): number
@@ -49,6 +59,9 @@ interface Balloon {
 export interface CelebrationOptions {
   /** The tier the party earned, read when the party starts rather than when the layer is built (SPEC §8.4). */
   tier: () => PartyTier
+  /** The bubbles she has left, which is the number of balloons (SPEC §10.1, issue #13). Read on each
+   *  set, so a respawn uses the size the core has now, not the size at the moment the party started. */
+  balloons: () => number
   onFirstBalloon?: () => void
   /** Called when the play arrow appears, which is after the fanfare has run (SPEC §10.1). */
   onPlayReady?: () => void
@@ -62,7 +75,7 @@ export function createCelebration(
   rng: Rng,
   opts: CelebrationOptions,
 ): CelebrationLayer {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  const dpr = Math.min(window.devicePixelRatio || 1, LAYOUT.dprMax)
 
   const canvas = document.createElement('canvas')
   canvas.className = 'particle-layer'
@@ -92,7 +105,11 @@ export function createCelebration(
   let raf = 0
   let lastFrame = 0
   let frameCount = 0
-  let lateStreak = 0
+  // The tier is decided by the time the layer itself spends on a frame, not by the wall-clock gap
+  // between frames, because the 30fps tier deliberately delivers every other frame (issue #12).
+  let lateMs = 0
+  let onTimeMs = 0
+  let skipFrame = false
   let tier: FrameTier = '60fps'
 
   // Reduced motion is a CSS rule, so the module has to stop drawing as well: a layer that keeps
@@ -111,20 +128,25 @@ export function createCelebration(
     root.dataset.tier = tier
   }
 
-  /** A burst takes only what the pool can hand out, so a burst that would exceed the cap drops particles (SPEC §5). */
+  /**
+   * A burst takes only what the pool can hand out, so a burst that would exceed the cap drops
+   * particles (SPEC §5). Under reduced motion the layer is hidden by CSS, so drawing a burst it cannot
+   * show is only work: the debug row would report live particles while nothing renders (issue #12).
+   */
   function spawnBurst(x: number, y: number): void {
+    if (reducedMotion) return
     const perBurst = tier === '30fps' ? PARTICLES.degradePerBurst : PARTICLES.perBurst
     for (let i = 0; i < perBurst; i++) {
       const particle = particles.acquire()
       if (particle === null) break
 
       const angle = (i / perBurst) * Math.PI * 2
-      const speed = PARTICLES.speed * (0.6 + rng.next() * 0.6)
+      const speed = PARTICLES.speedPxPerSecond * (0.6 + rng.next() * 0.6)
       particle.x = x
       particle.y = y
       particle.vx = Math.cos(angle) * speed
       particle.vy = Math.sin(angle) * speed
-      particle.life = PARTICLES.life * (0.7 + rng.next() * 0.4)
+      particle.life = PARTICLES.lifeSeconds * (0.7 + rng.next() * 0.4)
     }
   }
 
@@ -135,15 +157,18 @@ export function createCelebration(
     const dt = lastFrame === 0 ? 0 : (now - lastFrame) / 1000
     lastFrame = now
 
-    if (dt > 0) {
-      // A frame over the budget is a late frame; a sustained run of them drops the tier for good (SPEC §10.2).
-      if (dt * 1000 > PARTICLES.frameBudgetMs) {
-        lateStreak += 1
-        if (lateStreak > 10) setTier('30fps')
-      } else {
-        lateStreak = 0
+    // The 30fps tier is an actual throttle, not just a smaller burst: every other frame is skipped, so
+    // the scene updates at 30fps instead of running 60fps draws that the tablet cannot afford (issue #12).
+    if (tier === '30fps') {
+      if (!skipFrame) {
+        skipFrame = true
+        raf = window.requestAnimationFrame(draw)
+        return
       }
+      skipFrame = false
     }
+
+    const workStart = performance.now()
 
     const active = particles.active()
     for (const particle of active) {
@@ -154,7 +179,7 @@ export function createCelebration(
       }
       particle.x += particle.vx * dt
       particle.y += particle.vy * dt
-      particle.vy += PARTICLES.gravity * dt
+      particle.vy += PARTICLES.gravityPxPerSecond * dt
     }
 
     frameCount += 1
@@ -167,7 +192,7 @@ export function createCelebration(
     ctx.save()
     ctx.scale(dpr, dpr)
     for (const particle of particles.active()) {
-      ctx.globalAlpha = Math.max(0, Math.min(1, particle.life / PARTICLES.life))
+      ctx.globalAlpha = Math.max(0, Math.min(1, particle.life / PARTICLES.lifeSeconds))
       ctx.fillStyle = '#ffd84d'
       ctx.beginPath()
       ctx.arc(particle.x, particle.y, PARTICLES.particleSize, 0, Math.PI * 2)
@@ -175,11 +200,30 @@ export function createCelebration(
     }
     ctx.restore()
 
+    // The tier is measured on the work this layer does, so a skipped frame cannot make it look late.
+    const workMs = performance.now() - workStart
+    if (workMs > PARTICLES.frameBudgetMs) {
+      lateMs += workMs
+      onTimeMs = 0
+      if (tier === '60fps' && lateMs >= PARTICLES.degradeAfterMs) setTier('30fps')
+    } else {
+      onTimeMs += workMs
+      lateMs = 0
+      // SPEC §10.2 only says the layer drops, so without this the degrade is a ratchet: one bad stretch
+      // on the tablet would be the tier for the rest of the session (issue #12).
+      if (tier === '30fps' && onTimeMs >= PARTICLES.recoverAfterMs) setTier('60fps')
+    }
+
     raf = window.requestAnimationFrame(draw)
   }
 
+  /** The number of balloons this set: the bubbles she has left, capped at twelve (SPEC §10.1, issue #13). */
+  function partySize(): number {
+    return Math.min(opts.balloons(), MAX_BALLOONS)
+  }
+
   function spawnBalloon(index: number): void {
-    if (balloons.length >= MAX_BALLOONS) return
+    if (balloons.length >= partySize()) return
 
     const el = document.createElement('button')
     el.type = 'button'
@@ -188,7 +232,8 @@ export function createCelebration(
     el.append(balloonShape())
     // SPEC §10.1: staggered entry, so balloons do not arrive as one flat wall.
     el.style.animationDelay = `${index * CELEBRATION.balloonStaggerMs}ms`
-    const span = 100 / (MAX_BALLOONS + 1)
+    // Spread across the party size, so a small set does not look like a broken row of twelve.
+    const span = 100 / (partySize() + 1)
     el.style.left = `${span * (index + 1)}%`
     root.appendChild(el)
 
@@ -219,7 +264,7 @@ export function createCelebration(
 
       for (const entry of balloons) entry.el.remove()
       balloons.length = 0
-      for (let i = 0; i < MAX_BALLOONS; i++) spawnBalloon(i)
+      for (let i = 0; i < partySize(); i++) spawnBalloon(i)
     })
   }
 
@@ -229,33 +274,43 @@ export function createCelebration(
 
     if (!reducedMotion) draw()
 
-    for (let i = 0; i < MAX_BALLOONS; i++) spawnBalloon(i)
+    for (let i = 0; i < partySize(); i++) spawnBalloon(i)
 
     // SPEC §10.1 phase 1: the completion cue is the existing fanfare, sized by the party.
     audio.playCompletion(opts.tier())
 
-    // SPEC §10.1: the play button appears after the fanfare, not at the same time. It is already in
-    // the DOM and already tappable; this is only the pulse, which reduced motion keeps still (SPEC §13).
-    window.setTimeout(() => {
+    // SPEC §10.1: the play button appears after the fanfare, not at the same time. The ready class is
+    // what makes it visible and tappable at the same moment (issue #13), and reduced motion shows it at
+    // once, because "after a beat" is a travel and travels are what reduced motion removes (SPEC §13).
+    const reveal = (): void => {
       if (!running) return
-      if (!reducedMotion) play.classList.add('next--pulsing')
+      play.classList.add('next--ready')
       if (opts.onPlayReady !== undefined) opts.onPlayReady()
-    }, CELEBRATION.playButtonDelayMs)
+    }
+    if (reducedMotion) {
+      reveal()
+    } else {
+      window.setTimeout(reveal, CELEBRATION.playButtonDelayMs)
+    }
   }
 
   function stop(): void {
     running = false
     window.cancelAnimationFrame(raf)
     play.classList.remove('next--pulsing')
+    play.classList.remove('next--ready')
     for (const balloon of balloons) balloon.el.remove()
     balloons.length = 0
     particles.reset()
     if (ctx !== null) ctx.clearRect(0, 0, canvas.width, canvas.height)
+    // A fanfare that is still running must not be heard in the next level (SPEC §10.1, issue #14).
+    audio.stop()
   }
 
   return {
     start,
     stop,
+    resize,
     frameTier: () => tier,
     balloonCount: () => balloons.length,
     particleCount: () => particles.activeCount(),

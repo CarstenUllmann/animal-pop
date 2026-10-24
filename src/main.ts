@@ -85,15 +85,24 @@ function start(root: HTMLElement): void {
   }
   log.step(saved === null ? `level ${state.level}` : `resumed level ${state.level}`)
 
+  // SPEC §10: the party is an overlay over the board, not a band below it, so the board stays visible
+  // under the dim. The celebration module measures the rect its root element covers, which is why the
+  // party element has to live inside the board area.
   const boardArea = block('board-area')
   const party = block('celebration')
   party.hidden = true
-  root.append(boardArea, party)
+  boardArea.append(party)
+  root.append(boardArea)
 
   const panel = createPanelView()
   root.append(panel.element)
 
-  const view = createBoardView({ onTap: enqueueTap })
+  const view = createBoardView({
+    onTap: enqueueTap,
+    // SPEC §8.3: the view needs to know which animals are goals so it can mark them; the core has
+    // already decided, so this only reports.
+    goalAnimals: () => state.goals.map((goal) => goal.animal),
+  })
   boardArea.append(view.element)
   log.step('view')
 
@@ -116,11 +125,19 @@ function start(root: HTMLElement): void {
       lastSave = resetSave
       state = resumeLevel(resetSave, pool)
       context.levelsCompleted = 0
+      // Issue #16: a reset is only a reset once it is written, otherwise the next force-close brings the
+      // wiped level straight back. Issue #11: the reset is a level change, so anything still queued goes
+      // with it, and the board is dealt again rather than left as the wiped one was.
+      writeSave(state, context, store)
+      queuedTaps.length = 0
       partyShown = false
       celebration.stop()
       party.hidden = true
       log.step(`adult reset → level ${state.level}`)
-      showLevel()
+      void view
+        .renderInitial(state.board)
+        .then(showLevel)
+        .catch((error: unknown) => showError(describeError(error)))
     },
   })
 
@@ -138,8 +155,18 @@ function start(root: HTMLElement): void {
     : null
   log.step(debug === null ? 'debug off' : 'debug overlay')
 
+  // Issue #18: the last error row has to catch a thrown error and an unhandled rejection alike. The boot
+  // log is what survives a force-close on an installed PWA, so both channels get the same message.
+  const showError = (message: string): void => {
+    log.error(message)
+    if (debug !== null) debug.reportError(message)
+  }
+  window.addEventListener('error', (event: ErrorEvent) => showError(describeError(event.error)))
+  window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => showError(describeError(event.reason)))
+
   const celebration = createCelebration(party, player, rng, {
     tier: () => partySize(state).tier,
+    balloons: () => partySize(state).balloons,
     onFirstBalloon: () => log.step('first balloon'),
     onPlayReady: () => log.step('play arrow'),
     onPlay: nextLevel,
@@ -157,7 +184,10 @@ function start(root: HTMLElement): void {
 
   applyLayout(root, viewport(), { rows: GRID, cols: GRID })
   window.addEventListener('resize', () => {
+    // Issue #19: a turn mid-level keeps the state, and the layout has to be playable straight away. The
+    // canvas is sized from the rect the party covers, so rotation also has to resize it.
     applyLayout(root, viewport(), { rows: GRID, cols: GRID })
+    celebration.resize()
   })
 
   let busy = true
@@ -177,7 +207,7 @@ function start(root: HTMLElement): void {
       drainQueue()
     })
     .catch((error: unknown) => {
-      log.error(describeError(error))
+      showError(describeError(error))
       renderFallback(root, log)
     })
 
@@ -187,6 +217,9 @@ function start(root: HTMLElement): void {
       firstTap = false
       log.step('first tap')
     }
+    // SPEC §10: the board is inert while the party is showing, apart from the celebration's own
+    // interactions. A tap during the party is not a tap on the level, so it does not reach the queue.
+    if (partyShown) return
     if (busy) {
       // Issue #11: at most two taps wait, so the queue can never run ahead of what she sees.
       if (queuedTaps.length < MAX_QUEUED_TAPS) queuedTaps.push(index)
@@ -199,6 +232,15 @@ function start(root: HTMLElement): void {
     busy = true
     try {
       const result = resolveTap(state, index, rng)
+
+      // Issue #8: the panel is rendered before the pop is animated, so the bubble that pays for this
+      // tap sparkles in the same frame as the pop, and the screen cannot show a state the save has
+      // already left behind.
+      state = result.state
+      lastSave = toSaveState(state, context)
+      writeSave(state, context, store)
+      showLevel()
+
       if (result.group !== null) {
         playTap(result)
         await view.animatePop(popForView(result))
@@ -212,11 +254,6 @@ function start(root: HTMLElement): void {
         firstPop = false
         log.step('first pop')
       }
-
-      state = result.state
-      lastSave = toSaveState(state, context)
-      writeSave(state, context, store)
-      showLevel()
 
       // SPEC §8.1: both goals at zero is the win, and the party is what is left on the rack.
       if (result.complete && !partyShown) showParty()

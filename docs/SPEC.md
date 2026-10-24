@@ -216,8 +216,9 @@ Provisional constants (§21 explains how they were estimated and that M5 replace
 Rows 1–2 and 3–6 are the numbers as they were estimated: level 1 is deliberately over-funded
 (~12 bubbles for a ~5-tap level) so her first celebration is a **big** party and she learns that
 the rack is a resource, not a countdown she's losing. From level 3 the slack narrows, and from
-level 7 every rack is the measured number rather than the estimate — 24 for levels 7–10 is the one
-estimate the measurement contradicts.
+level 7 every rack is the measured number rather than the estimate — the 24 the provisional table in §21 guessed
+for levels 7–10 is the one number the measurement contradicts, and the plateau measures 35 rather than the
+39 it guessed.
 
 **The floor clause is the sizing rule**, which is how M5 read it: "careless play can plausibly end
 with 2–3 balloons" describes the run that takes the most pops, so the rack is the 90% pop count of
@@ -672,20 +673,24 @@ export const MAX_BALLOONS = 12
 export const MAX_QUEUED_TAPS = 2
 export const PLATEAU_LEVEL = 16
 
-// provisional — replaced by simulated values in M5
+// provisional until the tuning milestone settles the pacing (issue #22): the first two rows are the
+// estimates below, the rest is simulator output from §16.2
 export const LEVEL_RAMP = [
-  { from: 1,  types: 4, goalEach: 3, bubbles: 12 },
-  { from: 3,  types: 5, goalEach: 4, bubbles: 16 },
-  { from: 7,  types: 5, goalEach: 6, bubbles: 24 },
-  { from: 11, types: 6, goalEach: 6, bubbles: 29 },
-  { from: 16, types: 6, goalEach: 8, bubbles: 39 },
+  { from: 1,  types: 4, goalEach: 3, bubbles: 12 },  // estimate, deliberately over-funded
+  { from: 3,  types: 5, goalEach: 4, bubbles: 16 },  // estimate
+  { from: 7,  types: 5, goalEach: 5, bubbles: 20 },  // measured
+  { from: 9,  types: 5, goalEach: 6, bubbles: 22 },  // measured
+  { from: 11, types: 6, goalEach: 6, bubbles: 29 },  // measured
+  { from: 13, types: 6, goalEach: 7, bubbles: 33 },  // measured
+  { from: 16, types: 6, goalEach: 8, bubbles: 35 },  // measured plateau
 ]
 ```
 
-**How the provisional bubble numbers were estimated:** a 6×6 board with *k* types averages
+**How the first two rows were estimated:** a 6×6 board with *k* types averages
 legal clusters of roughly 2.8 / 2.5 / 2.2 animals for k = 4 / 5 / 6. A *greedy* tap (biggest
 group) yields about 1.4 / 1.0 / 0.73 goal animals; a *random* tap yields roughly 40% less.
 The rack is therefore sized at ≈1.15× the estimated **random-play** tap count, which puts a
-careless player near the floor and a careful player around half the rack. These are
-**estimates, not measurements** — §16.2 exists to replace them, and only the calibration
+careless player near the floor and a careful player around half the rack. These were
+**estimates, not measurements** for the rows the rule produced; the §16.2 simulator replaced them from
+level 7, and only the calibration
 target (§9.1) is binding.

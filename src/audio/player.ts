@@ -19,6 +19,12 @@ export interface AudioPlayer {
   playBalloon(index: number): void
   /** Completion cue: fanfare for a big or medium party, soft two-note chime for a small one. */
   playCompletion(tier: PartyTier): void
+  /**
+   * Cancels everything still sounding or still scheduled (SPEC §10.1, issue #14). Mute alone only
+   * drops the master gain, so a fanfare scheduled before the play arrow is tapped would keep playing
+   * into the next level; this is what the celebration calls when the party ends.
+   */
+  stop(): void
   setMuted(muted: boolean): void
   isMuted(): boolean
 }

@@ -60,6 +60,68 @@ describe('celebration stylesheet', () => {
     expect(media).toContain('animation: none')
     expect(media).toContain('.particle-layer')
     expect(media).toContain('visibility: hidden')
+    // Issue #19: pops, bubbles, rings and completion still read. The ring selector has to be the one
+    // the panel actually builds, and the rack keeps its gap even without the sparkle ring.
+    expect(media).toContain('.goal__ring-fill')
+    expect(media).toContain('.rack__bubble--just-spent')
+    expect(media).toContain('.next--ready')
+  })
+})
+
+describe('shell (SPEC §13, issue #10)', () => {
+  it('puts the party as an overlay over the board rather than a band below it (issue #12)', () => {
+    // The board area is the rect ui/celebration.ts measures, so the layer has to cover exactly it.
+    expect(rule('.board-area')).toContain('position: relative')
+    const overlay = rule('.celebration')
+    expect(overlay).toContain('position: absolute')
+    // `inset` is Chrome 87, so the overlay spells its four sides out (SPEC §6).
+    expect(overlay).toContain('top: 0')
+    expect(overlay).toContain('bottom: 0')
+  })
+
+  it('the shell is the grid the layout module drives, with a plain fallback for Chrome 61 (SPEC §6)', () => {
+    const shell = rule('.game')
+    expect(shell).toContain('grid-template-columns: 30% 70%')
+    expect(shell).toContain('--panel-width-fraction')
+    expect(shell).toContain('--panel-height-fraction')
+    // `#app` is more specific than `.game`, so it must not carry a display that would beat the grid.
+    expect(rule('#app')).not.toContain('display')
+    // `gap` is Chrome 84, and the forbidden token list in baseline.test.ts says so.
+    expect(css).not.toMatch(/(^|[\s{;])gap:/)
+  })
+
+  it('the play arrow is shown and hit-tested in the same step (issue #13)', () => {
+    const ready = rule('.next--ready')
+    expect(ready).toContain('opacity: 1')
+    expect(ready).toContain('pointer-events: auto')
+    expect(rule('.next')).toContain('pointer-events: none')
+  })
+
+  it('the level label and the mute have reserved places at least as big as the smallest target', () => {
+    expect(rule('.panel__level')).toContain('min-height: var(--tap-min-px, 64px)')
+    expect(rule('.mute')).toContain('var(--tap-min-px, 64px)')
+  })
+})
+
+describe('rack stylesheet (SPEC §8.2, issue #8)', () => {
+  it('is a wrapping grid, because a plateau rack of 35 bubbles cannot fit one row', () => {
+    const rack = rule('.rack')
+    expect(rack).toContain('display: grid')
+    expect(rack).toContain('repeat(var(--rack-columns, 4), var(--bubble-px, 22px))')
+    expect(rule('.rack__bubble')).toContain('position: relative')
+    // SPEC §8.2's 3-4 per row is what the layout module chooses within, and the rows are the wrap.
+    expect(rack).toContain('grid-template-columns: repeat(4, 22px)')
+  })
+
+  it('the bubble that just paid for a tap sparkles in the same frame as the pop (issue #8)', () => {
+    expect(rule('.rack__bubble--just-spent::after')).toContain('animation: bubble-sparkle')
+    expect(css).toContain('@keyframes bubble-sparkle')
+  })
+
+  it('a spent bubble stays a gap, with no empty or warning state (SPEC §8.4)', () => {
+    expect(css).toMatch(/\.rack__bubble--spent \{/)
+    expect(css).not.toContain('#f00')
+    expect(css).not.toMatch(/\.rack[^{]*\{[^}]*color: red/)
   })
 })
 
@@ -96,11 +158,15 @@ describe('mute stylesheet', () => {
     expect(mute).toContain('height: 64px')
   })
 
-  it('it sits in the party band, where it cannot overlap the board (issue #17)', () => {
+  it('it sits in the panel corner, which is the one place it can never overlap the board (issue #17)', () => {
     const mute = rule('.mute')
     expect(mute).toContain('position: absolute')
     expect(mute).toContain('top:')
     expect(mute).toContain('right:')
+    // The mute is mounted inside the panel, so the panel has to be its containing block. In landscape the
+    // panel is the left column and in portrait the row above the board, so its corner is always its own.
+    expect(rule('.panel')).toContain('position: relative')
+    expect(rule('.panel')).not.toContain('flex-direction: row')
   })
 
   it('both states have a shape, taken from the same fact `aria-pressed` carries', () => {
