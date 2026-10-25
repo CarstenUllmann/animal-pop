@@ -9,8 +9,11 @@ the bubble meter, the celebration with balloons and the play arrow, save/resume,
 long-press reset, the debug overlay, and the portrait and reduced-motion rules. The celebration was
 rebuilt in issue #24's four slices: bigger balloons hung as a bunch, a slow climb into an endless
 float, coloured fireworks with a three-burst opening, and a play arrow that waits for the last
-balloon. The ramp is locked to `npm run sim` output (issue #22). What is left is the device
-checklist, the unsupervised five-minute session and the v1 tag (issues #20 and #22).
+balloon. The ramp is locked to `npm run sim` output (issue #22). The device pass is underway on the target tablet
+and green so far for install, offline cold launch, rotation, resume and tap feedback, through Firefox's
+PWA wrapper (issue #23, ADR-0002). What is left is the rest of the device checklist — the kid-proofing row
+and the frame-tier meter (issue #29) — the 60-second fun test (issue #6), the unsupervised five-minute
+session (issue #22) and the v1 tag (issue #20).
 
 ## Commands
 
@@ -30,16 +33,17 @@ Pushes to `main` build and deploy to GitHub Pages via
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). The app is served from
 <https://carstenullmann.github.io/animal-pop/>.
 
-The build targets `es2017` / `chrome61`, the engine the installed app actually gets (the tablet's
-browser is Chrome 138; SPEC §2 explains why those are two different engines). No CDN,
-no web fonts, no runtime network requests: everything is bundled and the service worker precaches
-the whole app.
+The build targets `es2017` / `chrome61`. That target is a defensive floor, not the engine the tablet
+runs: the tablet's WebView provider is Chrome 137, and the installed app runs in Firefox's PWA wrapper,
+so the effective engine is Gecko (SPEC §2, [ADR-0002](docs/adr/0002-firefox-pwa-wrapper-is-the-tablet-install-path.md)).
+No CDN, no web fonts, no runtime network requests: everything is bundled and the service worker
+precaches the whole app.
 
-The *engine* baseline is lower than the build target: the installed app runs in System WebView 61,
-so the shipped bundle has to parse on Chrome 61, and the service worker is built as a plain script
-inside the Chrome 61 API surface (issue #23, SPEC §2). `src/baseline.test.ts` keeps the shipped
-sources from naming an API the engine never had, and it reads `dist/`, so it is only meaningful
-after a fresh `npm run build`.
+The Chrome 61 parse surface is still what the sources are held to, because the WebAPK shell Chrome mints
+for this origin cannot load on Android 8.1 — its `classes.dex` is DEX 039 while the platform loads at most
+DEX 038 — so the app is installed through Firefox's PWA wrapper instead (issue #23, ADR-0002).
+`src/baseline.test.ts` keeps the shipped sources from naming an API that surface never had, and it reads
+`dist/`, so it is only meaningful after a fresh `npm run build`.
 
 ## How it plays
 

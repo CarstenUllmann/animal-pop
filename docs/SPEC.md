@@ -30,10 +30,19 @@ There is **no failure state, no timer, no score, and no text she has to read**.
 Chrome on Android 8.1 is frozen at **Chrome 138** — no further updates. Therefore:
 
 - **Browser baseline: Chrome 138.** No web platform features newer than that.
-- **Effective baseline: System WebView 61.0.3163.98**, the engine measured on the target tablet
-  (issue #23). The installed app runs in the WebView, not in the browser, so the shipped bundle has
-  to *parse* on Chrome 61. This is what the crash was: `?.` and `??` are Chrome 64/70 syntax, so the
-  module never executed in standalone, and there is no console to show it.
+- **Code baseline: the Chrome 61 parse surface**, kept as a defensive floor. The shipped bundle still
+  has to parse on Chrome 61, and `src/baseline.test.ts` keeps the sources from naming an API that
+  surface never had.
+- **The engine the tablet actually runs** (issue #23, measured 2026-10-25): `dumpsys webviewupdate`
+  reports `com.android.chrome` 137.0.7151.115 as the current and preferred WebView provider;
+  `com.google.android.webview` 61.0.3163.98 is installed but **not enabled**. The installed app runs in
+  Firefox 158's PWA wrapper, so the effective engine is Gecko — see ADR-0002. The Chrome 61 target is
+  therefore a floor the code stays inside, not the engine the device runs, and the `?.`/`??` reading
+  that produced it was wrong. The standalone crash was never app code: the WebAPK shell Chrome mints for
+  this origin declares `minSdkVersion: 24` while its `classes.dex` is DEX 039, which Android 8.1 cannot
+  load (038 is its ceiling), so the shell's `SplashContentProvider` throws `ClassNotFoundException`
+  before any page, console or boot trace can exist. Nothing in the app can change a shell Chrome mints
+  server-side; the install path is the Firefox PWA wrapper, which is verified working on the device.
 - Build target: `es2017`, esbuild target `chrome61`. Syntax newer than Chrome 61 is downlevelled by
   the build; APIs newer than it — `globalThis` (71), `Array.flatMap` (69), `getAnimations` (69),
   `Animation.finished` (75) — cannot be transpiled, so they are feature-detected at runtime and the
@@ -45,7 +54,9 @@ Chrome on Android 8.1 is frozen at **Chrome 138** — no further updates. Theref
   inside the Chrome 61 API surface: CacheStorage (42), FetchEvent (45), `skipWaiting` (45),
   `clients.claim` (45), cache query options (54). It is built as a plain script, because that engine
   cannot register a module worker, and it precaches one file at a time, so a single unreachable file
-  does not take the whole cache down on a weak connection. Tracked on issue #23.
+  does not take the whole cache down on a weak connection. Tracked on issue #23, and verified on the
+  device on 2026-10-25: the Firefox PWA cold-launches from cache with Wi-Fi off and airplane mode on, and
+  resumes the exact level it was left on.
 - No CDN dependencies, no web fonts, no network requests at runtime. Everything is bundled.
 
 ---
@@ -492,7 +503,10 @@ Off by default. This is the only on-device debugging
 channel (no USB tethering guaranteed), so it must be built in M0 rather than bolted on.
 
 It also carries a `boot` row with the persisted boot trace from §14.1 — the previous run's steps
-then this run's, starting with the engine version token and the feature-detected APIs it found.
+then this run's, starting with the engine version token and the feature-detected APIs it found. The
+engine token only recognises Chromium user agents, so inside Firefox's PWA wrapper it reads
+`unknown engine` (issue #23, measured 2026-10-25); the `display` row still answers the standalone/browser
+question there.
 Since a crash can end the process before the overlay is ever mounted, boot must also render a
 plain fallback panel **without** `?debug=1` when it fails, and no startup call may throw:
 feature-detect `crypto.getRandomValues`, `matchMedia`, `Element.prototype.animate` and
@@ -630,13 +644,21 @@ the game.
 
 Manual checklist on the actual tablet, run at every milestone:
 
-- [ ] installs from URL, opens standalone, no address bar
-- [ ] works in airplane mode
-- [ ] rotates to portrait without breaking layout
+- [x] installs from URL, opens standalone, no address bar — satisfied by Firefox's PWA wrapper
+      (ADR-0002), because Chrome's WebAPK shell cannot load on Android 8.1
+- [x] works in airplane mode
+- [x] rotates to portrait without breaking layout
 - [ ] no zoom, no scroll, no text selection, no context menu
 - [ ] 60fps pops, falls and fireworks (or a stable 30)
-- [ ] every tap gives feedback within one frame
-- [ ] force-close mid-level → resumes exactly where it was
+- [x] every tap gives feedback within one frame
+- [x] force-close mid-level → resumes exactly where it was
+
+Run on the target tablet on 2026-10-25 at `6c1f8e4`, through the Firefox PWA wrapper (ADR-0002):
+the app installs, opens full-screen with no address bar in its own task, cold-launches from cache in
+airplane mode, resumes the exact level it was left on, and gives tap feedback inside one frame. The
+frame-rate row is open as issue #29 — the celebration ran at 27.8–31.3 fps while the tier meter kept
+reporting 60 fps, so the meter never degrades under mixed frame delivery. The kid-proofing row is
+still to be walked through by hand.
 
 ---
 
@@ -696,8 +718,8 @@ pacing/party slack/sound volume. Ship v1.
 | Risk | Mitigation |
 |---|---|
 | Chrome frozen at 138 on Android 8.1 | Baseline locked to 138; M0 proves it on device before any game code |
-| PWA install unsupported / flaky on old WebView | M0 kill-criterion → Capacitor APK early |
-| Old GPU can't hold 60fps with fireworks | Particle pooling, DPR cap 2, automatic 30fps degrade tier |
+| PWA install unsupported / flaky on old WebView | Materialised in a different way than expected: the install itself works, but Chrome's WebAPK shell cannot load on Android 8.1, so the install path is Firefox's PWA wrapper (ADR-0002). Capacitor stays the fallback for a device with no working PWA shell |
+| Old GPU can't hold 60fps with fireworks | Particle pooling, DPR cap 2, automatic 30fps degrade tier — the tier does not engage on the tablet yet, because the meter never reaches its degrade threshold under mixed frame delivery (issue #29) |
 | Mechanic isn't actually fun for her | M1 ships the bare loop first; pivot to merge-drop is a core rewrite, decide early |
 | Bubble rack grows to the measured 35 items and looks cluttered | 3–4 per row grid in landscape, the portrait band, sized to the panel; `partyPct` (ratio, not count) drives celebration intensity |
 | "Fewer taps" lesson is invisible | Rack drains on every tap with the same animation that becomes the balloons |
