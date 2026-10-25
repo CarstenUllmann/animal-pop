@@ -10,16 +10,17 @@ import { createCelebration, type CelebrationLayer } from './celebration'
 import { bunchMetricsFor } from './layout'
 
 /**
- * Issue #35: the first behavioural test in this suite, because a pop that only exists as a string cannot
- * show what is left in the tree. Every other test in `celebration.test.ts` reads the source - `vitest.config.ts`
- * pins the node environment, so mounting is what this file is for.
+ * The behavioural tests for the celebration: the ones that mount the layer, tap a balloon, and look at what is
+ * left in the tree. Every other test in `celebration.test.ts` reads the source, because `vitest.config.ts` pins
+ * the node environment for the rest of the suite - a pop that only exists as a string cannot show that the
+ * element is gone, and a refill that only exists as a string cannot show that the bunch came back.
  *
- * What jsdom gives the layer: a DOM and real timers. What it does not give it: a canvas (`getContext('2d')`
- * is null, so the layer draws nothing and returns before the first frame), layout (`getBoundingClientRect` is
- * all zeros) and hit-testing. So the mount proves what the module does to the tree and what it schedules, and
- * the hit box is held by the stylesheet rule read below - `styles.test.ts` holds the same rule against the
- * constants. That split is deliberate: the module's own guard is what the mount can prove, and the rule that
- * makes a tap land on the balloon underneath is CSS, which jsdom never applies.
+ * What jsdom gives the layer: a DOM and real timers. What it does not give it: a canvas (`getContext('2d')` is
+ * null, so the layer draws nothing and returns before the first frame), layout (`getBoundingClientRect` is all
+ * zeros) and hit-testing. So these tests prove what the module does to the tree and what it schedules. The hit
+ * box is held by the stylesheet rule read below - `styles.test.ts` holds the same rule against the constants -
+ * because jsdom applies no CSS at all. That split is deliberate: the module's own guard is what a mount can
+ * prove, and the rule that makes a tap land on the balloon underneath is CSS.
  */
 
 // jsdom has no canvas package, so every `getContext` call prints a warning on its virtual console. The layer
@@ -91,68 +92,78 @@ function wait(ms: number): Promise<void> {
   })
 }
 
+function asElement(value: HTMLElement | undefined): HTMLElement {
+  if (value === undefined) throw new Error('no balloon in the tree')
+  return value
+}
+
+/** The place a balloon is hung at, as the module wrote it into the element. */
+function positionOf(el: HTMLElement): string {
+  return `${el.style.left}/${el.style.bottom}`
+}
+
 describe('a popped balloon collapses to nothing and leaves the layer (issue #35)', () => {
   it('removes the element when the collapse ends, so nothing poppable is left behind', async () => {
     const { layer, root } = mount(2)
     layer.start()
 
-    const popped = balloonsIn(root)[0] as HTMLElement
-    const kept = balloonsIn(root)[1] as HTMLElement
+    const popped = asElement(balloonsIn(root)[0])
+    const kept = asElement(balloonsIn(root)[1])
     expect(balloonsIn(root)).toHaveLength(2)
 
     popped.click()
-    // While it collapses the element is still in the tree: the transition is what makes the pop read as a
-    // pop, and the class is the rule that takes its hit box away.
+    // While it collapses the element is still in the tree: the transition is what makes the pop read as a pop,
+    // and the class is the rule that takes its hit box away.
     expect(popped.isConnected).toBe(true)
     expect(popped.classList.contains('balloon--popped')).toBe(true)
 
     await wait(CELEBRATION.balloonCollapseMs + 150)
 
-    // SPEC §10.1: the balloon is gone. The stub that used to sit there until every balloon in the set was
+    // SPEC §10.1: the balloon is gone. The stub that used to sit in the tree until every balloon in the set was
     // popped is what made her tap the same balloon over and over.
     expect(popped.isConnected).toBe(false)
     expect(kept.isConnected).toBe(true)
-    expect(balloonsIn(root)).toEqual([kept])
-    expect(layer.balloonCount()).toBe(1)
-
-    // Pop the last one and the set arrives again - and the new set carries no popped balloon, so the layer
-    // holds nothing that looks poppable.
-    kept.click()
-    await wait(CELEBRATION.balloonCollapseMs + 150)
+    // The slot is refilled, so the tree is back at the cap with nothing poppable left in it (issue #36).
     const hanging = balloonsIn(root)
     expect(hanging).toHaveLength(2)
+    expect(hanging.indexOf(kept)).toBe(0)
+    expect(hanging.some((el) => el === popped)).toBe(false)
     expect(hanging.some((el) => el.classList.contains('balloon--popped'))).toBe(false)
   })
 
   it('takes the hit box off a collapsing balloon, so a tap lands on the balloon underneath', async () => {
     // The hit box is the button, so the rule that stops it taking taps has to be the stylesheet's: jsdom
-    // applies no CSS at all, which is why this is read as text here and held as a number in
-    // `styles.test.ts`. What the mount can prove is the module's own half - a second tap does nothing.
-    const start = css.indexOf('.balloon--popped {')
-    expect(css.slice(start, css.indexOf('}', start))).toContain('pointer-events: none')
+    // applies no CSS at all, which is why this is read as text here and held as a number in `styles.test.ts`.
+    // What the mount can prove is the module's own half - a second tap does nothing.
+    const rule = css.slice(css.indexOf('.balloon--popped {'), css.indexOf('}', css.indexOf('.balloon--popped {')))
+    expect(rule).toContain('pointer-events: none')
 
     const { layer, root, pops } = mount(2)
     layer.start()
-    // The two entry chimes are on timers, so they are done before the counting starts.
-    await wait(300)
-    expect(pops).toEqual([0, 1])
 
-    const popped = balloonsIn(root)[0] as HTMLElement
+    const popped = asElement(balloonsIn(root)[0])
     popped.click()
-    expect(pops).toEqual([0, 1, 0])
+    expect(pops).toEqual([0])
     popped.click()
-    expect(pops).toHaveLength(3)
+    expect(pops).toHaveLength(1)
     expect(popped.isConnected).toBe(true)
 
     await wait(CELEBRATION.balloonCollapseMs + 150)
     expect(popped.isConnected).toBe(false)
+
+    // The tap that would have landed on the space this balloon occupied now reaches the balloon hanging in it,
+    // because the only thing in the tree is a hanging balloon: the exiting one is out of it.
+    const next = asElement(balloonsIn(root)[1])
+    next.click()
+    expect(pops).toHaveLength(2)
+    expect(next.isConnected).toBe(true)
   })
 
   it('cancels a pending exit on stop, so a force-closed party leaves nothing behind', async () => {
     const { layer, root } = mount(2)
     layer.start()
 
-    const popped = balloonsIn(root)[0] as HTMLElement
+    const popped = asElement(balloonsIn(root)[0])
     popped.click()
     // A party she has left: the timer set is cleared, and the balloon that was mid-collapse is taken with
     // every other hanging one.
@@ -160,33 +171,135 @@ describe('a popped balloon collapses to nothing and leaves the layer (issue #35)
     expect(popped.isConnected).toBe(false)
     expect(balloonsIn(root)).toHaveLength(0)
 
-    // Had the exit been allowed to fire, it would have refilled the bunch on an idle layer. That is the leak
-    // a `transitionend` listener could not be cleared from, and it is why the removal is a timer.
+    // Had the exit been allowed to fire, it would have refilled the bunch on an idle layer. That is the leak a
+    // `transitionend` listener could not be cleared from, and it is why the removal is a timer.
     await wait(CELEBRATION.balloonCollapseMs + 150)
     expect(balloonsIn(root)).toHaveLength(0)
     expect(layer.balloonCount()).toBe(0)
   })
 
-  it('pops and removes in the same step under reduced motion (SPEC §13)', async () => {
+  it('pops, removes and refills in the same step under reduced motion (SPEC §13)', () => {
     const matchMedia = window.matchMedia
     const { layer, root } = mount(2, true)
     try {
       layer.start()
-
-      const popped = balloonsIn(root)[0] as HTMLElement
-      const kept = balloonsIn(root)[1] as HTMLElement
+      const popped = asElement(balloonsIn(root)[0])
+      const kept = asElement(balloonsIn(root)[1])
       popped.click()
-      // The stylesheet makes the collapse a single frame, so there is no travel for a timer to wait on: the
-      // pop and the removal are the same step, and the tree is already the answer.
+
+      // The stylesheet makes the collapse a single frame, so there is no travel for a timer to wait on: the pop,
+      // the removal and the refill are one step, and the tree is already the answer.
       expect(popped.isConnected).toBe(false)
       expect(kept.isConnected).toBe(true)
-      expect(layer.balloonCount()).toBe(1)
-
-      // Nothing is still scheduled behind the pop, so a tick later the tree is the same tree.
-      await wait(200)
-      expect(balloonsIn(root)).toEqual([kept])
+      expect(balloonsIn(root)).toHaveLength(2)
+      expect(layer.balloonCount()).toBe(2)
     } finally {
       window.matchMedia = matchMedia
     }
+  })
+})
+
+describe('the bunch replaces itself as she pops, so it never empties (issue #36)', () => {
+  it('fills the slot a pop leaves at the cap, in a fresh position, with no delay beyond the rise', async () => {
+    const { layer, root, pops } = mount(3)
+    layer.start()
+
+    const hung = balloonsIn(root)
+    expect(hung).toHaveLength(3)
+    // The set that arrives together is still staggered, so the pop's delay cannot be read as the whole rule.
+    expect(asElement(hung[0]).style.animationDelay).toBe('0ms')
+    expect(asElement(hung[1]).style.animationDelay).toBe(`${CELEBRATION.balloonStaggerMs}ms`)
+
+    const popped = asElement(hung[0])
+    const place = positionOf(popped)
+    popped.click()
+    await wait(CELEBRATION.balloonCollapseMs + 150)
+
+    const after = balloonsIn(root)
+    // Back at the cap: the bunch she sees is the bunch the rule answered, with one new place in it.
+    expect(after).toHaveLength(3)
+    expect(after.some((el) => el === popped)).toBe(false)
+    const refill = after.filter((el) => hung.indexOf(el) === -1)
+    expect(refill).toHaveLength(1)
+
+    // A fresh draw against the bunch still hanging. The spot this balloon was fading out of is free by the time
+    // the exit runs, so the rule is allowed to answer it - seed 42 does not, so this is a different place.
+    expect(positionOf(asElement(refill[0]))).not.toBe(place)
+
+    // No delay beyond the rise: the climb starts at once, which is what lets it overlap the collapse.
+    expect(asElement(refill[0]).style.animationDelay).toBe('0ms')
+
+    // And the refill made no sound on its way in: the only entry is the tap.
+    expect(pops).toEqual([0])
+  })
+
+  it('makes no sound at spawn, so the pop is the only sound a balloon makes', async () => {
+    const { layer, root, pops } = mount(2)
+    layer.start()
+
+    await wait(300)
+    expect(balloonsIn(root)).toHaveLength(2)
+    expect(pops).toEqual([])
+
+    // The pitch is the index in the set as it is now (SPEC §11), not the chime it was hung with.
+    const second = asElement(balloonsIn(root)[1])
+    second.click()
+    expect(pops).toEqual([1])
+
+    await wait(CELEBRATION.balloonCollapseMs + 150)
+    // The slot refilled, and the refill was silent on the way in.
+    expect(balloonsIn(root)).toHaveLength(2)
+    expect(pops).toEqual([1])
+  })
+
+  it('pops a balloon that is still climbing, exactly like one at rest', async () => {
+    const { layer, root, pops } = mount(2)
+    layer.start()
+
+    const popped = asElement(balloonsIn(root)[0])
+    popped.click()
+    await wait(CELEBRATION.balloonCollapseMs + 150)
+
+    // This is the mid-rise balloon: the element has just been hung, with no rise delay, so in a browser it is
+    // climbing while the tap lands. jsdom has no animation, so what the mount can prove is that nothing in the
+    // pop path depends on how far the climb got.
+    const climbing = asElement(balloonsIn(root)[1])
+    climbing.click()
+    expect(climbing.classList.contains('balloon--popped')).toBe(true)
+    expect(pops).toEqual([0, 1])
+    expect(climbing.isConnected).toBe(true)
+
+    await wait(CELEBRATION.balloonCollapseMs + 150)
+    expect(climbing.isConnected).toBe(false)
+    expect(balloonsIn(root)).toHaveLength(2)
+    expect(balloonsIn(root).some((el) => el.classList.contains('balloon--popped'))).toBe(false)
+  })
+
+  it('never grows past the cap however long she pops, and does not leak elements', async () => {
+    const cap = 3
+    const { layer, root } = mount(cap)
+    layer.start()
+
+    const seen = new Set<HTMLElement>()
+    for (let pop = 0; pop < 10; pop++) {
+      const hanging = balloonsIn(root)
+      expect(hanging).toHaveLength(cap)
+      expect(layer.balloonCount()).toBe(cap)
+
+      const popped = asElement(hanging[0])
+      seen.add(popped)
+      popped.click()
+      await wait(CELEBRATION.balloonCollapseMs + 150)
+      // The popped element is out of the tree, so it cannot be a hit target in a later pop.
+      expect(popped.isConnected).toBe(false)
+    }
+
+    // Ten pops hung ten different elements, and none of them is still in the tree: the refills are new
+    // elements, the popped ones leave, and the tree still holds exactly the cap.
+    expect(seen).toHaveLength(10)
+    expect(balloonsIn(root).some((el) => seen.has(el))).toBe(false)
+    expect(balloonsIn(root)).toHaveLength(cap)
+    expect(balloonsIn(root).some((el) => el.classList.contains('balloon--popped'))).toBe(false)
+    expect(layer.balloonCount()).toBe(cap)
   })
 })

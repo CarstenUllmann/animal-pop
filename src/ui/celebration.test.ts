@@ -64,8 +64,8 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
   })
 
   it('keeps only timers that can still fire, so a long party cannot grow the list', () => {
-    // Every respawn of the balloon set schedules another handful. A list that also kept fired ids would
-    // grow for as long as she plays, which is what "idles indefinitely" rules out (SPEC §10.1 phase 4).
+    // Every pop schedules an exit, so a list that also kept the ids it had already fired would grow for as
+    // long as she plays, which is what "idles indefinitely" rules out (SPEC §10.1 phase 4).
     const later = section('function later(', 'function clearTimers')
     expect(later).toContain('timers.splice(at, 1)')
     expect(later).toContain('timers.push(id)')
@@ -132,6 +132,47 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
     const stop = section('function stop(): void {', 'return {')
     expect(stop).toContain('clearTimers()')
     expect(stop).toContain('balloon.el.remove()')
+  })
+
+  it('refills the slot a pop leaves, at the cap, with no delay and no sound (issue #36)', () => {
+    const pop = section('function popBalloon(', 'function spawnBalloon(')
+    const spawn = section('function spawnBalloon(', 'function start(): void {')
+    const hang = section('function hangBunch(', 'function popBalloon(')
+
+    // One slot at a time rather than a re-hung set: the bunch she sees is the one the rule answered, and only
+    // the gap a pop made is new. Re-hanging the whole set is what left a shrunken bunch on the board and a
+    // child tapping at nothing.
+    expect(pop).toContain('placeSlot(')
+    expect(pop).not.toContain('hangBunch()')
+
+    // The cap is the party rather than the board (SPEC §8.4), so a long session cannot grow the set, and
+    // `placeSlot` answers `null` when no spot is free, which is the honest answer on a board that is already
+    // full at the rung the bunch sits at (issue #33).
+    expect(pop).toContain('balloons.length >= partySize()')
+    expect(pop).toContain('if (place === null) return')
+    // The refill is asked against the bunch still hanging, which is the set as she sees it: by the time the
+    // exit runs, the spot this balloon was fading out of is free, so a refill may drift into it.
+    expect(pop).toContain('balloons.map((entry) => entry.place)')
+
+    // No delay beyond the rise. The set that arrives together is still staggered, a refilled slot is not, so
+    // the 1200ms climb overlaps the 180ms collapse the slot came from and the blob never pauses.
+    expect(hang).toContain('i * CELEBRATION.balloonStaggerMs')
+    expect(pop).toContain('spawnBalloon(place, balloons.length, 0)')
+    expect(spawn).toContain('el.style.animationDelay = `${delayMs}ms`')
+
+    // Sound belongs to the pop only, so the pop's pitch is the index in the set as it is now, and the entry
+    // chime with the `chimeIndex` it needed is gone (SPEC §11). The debug step for the first balloon is
+    // reported at hang time, once per set, because a spawn has nothing left to report it from (issue #18).
+    expect(spawn).not.toContain('audio.')
+    expect(source).not.toContain('chimeIndex')
+    expect(pop).toContain('audio.playBalloon(balloons.indexOf(balloon))')
+    expect(hang).toContain('opts.onFirstBalloon')
+
+    // A mid-rise balloon is tappable and pops exactly like one at rest, because the pop is not a state of the
+    // rise: the same click handler and the same `popBalloon`, and nothing that asks how far the climb got.
+    // The rise keeps its own transform owner, so a pop mid-climb cannot restart it (issue #25).
+    expect(spawn).toContain('if (!running || balloon.popped) return')
+    expect(pop).not.toContain('animation')
   })
 
   it('hangs the bunch through the placement rule, in px against the board rather than as a percent of the overlay (issues #25, #32-#34)', () => {

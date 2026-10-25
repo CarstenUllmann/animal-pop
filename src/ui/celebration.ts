@@ -8,7 +8,7 @@ import {
 } from '../game/constants'
 import type { AudioPlayer } from '../audio/player'
 import type { PartyTier, Rng } from '../game/types'
-import { clampToBoard, placeBunch, type BunchMetrics, type Place } from './bunch'
+import { bunchFactor, clampToBoard, placeBunch, placeSlot, type BunchMetrics, type Place } from './bunch'
 import { hasMatchMedia } from './capabilities'
 import { createFrameTierMeter, type FrameTier } from './frameTier'
 import { createPool } from './pool'
@@ -25,12 +25,13 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 const BALLOON_COLORS = ['#ff8fab', '#ffd166', '#7bdff2', '#a0e57c', '#c9a7ff', '#ff9f68']
 
 /**
- * The celebration layer (SPEC §10, issues #12 and #13). Balloons rise one at a time so the scene
- * does not arrive as one flat wall, each chimes on entry and pops on tap, and popping the last one
- * brings a whole new set. The number of balloons is the bubbles she has left, capped at twelve. The
- * play button appears once the last balloon has settled, and it becomes visible and tappable in the
- * same step (issue #28), while the balloons keep swaying behind it (issue #26). A pop is a collapse that
- * ends with the balloon taken out of the tree, and while it collapses it takes no taps (issue #35).
+ * The celebration layer (SPEC §10, issues #12 and #13). Balloons rise one at a time so the scene does not
+ * arrive as one flat wall, each pops on tap, and the slot a pop leaves is refilled by a fresh draw so the
+ * bunch never empties (issue #36). Sound belongs to the pop only. The number of balloons is the bubbles she
+ * has left, capped at twelve. The play button appears once the last balloon has settled, and it becomes
+ * visible and tappable in the same step (issue #28), while the balloons keep swaying behind it (issue #26).
+ * A pop is a collapse that ends with the balloon taken out of the tree, and while it collapses it takes no
+ * taps (issue #35).
  *
  * This is the only particle system in the game. Density is capped by `PARTICLES` and the burst
  * objects come from `ui/pool.ts`, which never grows past its capacity, so a burst cannot make the
@@ -89,8 +90,6 @@ interface Balloon {
   /** The place this balloon is hung at, in the board the rule was read against (issue #34). A rotation
    *  re-clamps this rather than drawing a new one, so the bunch she sees is the bunch the rule answered. */
   place: Place
-  /** Which chime of the set this balloon is, so its sound rises with the set (SPEC §11). */
-  chimeIndex: number
 }
 
 export interface CelebrationOptions {
@@ -164,9 +163,9 @@ export function createCelebration(
   let drawnAt = 0
   let frameCount = 0
   /**
-   * Every pending timer this layer owns: the staggered balloon chimes, the play-arrow reveal, the opening
-   * bursts and the exits that remove a collapsing balloon (issue #35). `stop()` clears them all, so a party
-   * that has been left cannot tick into the next one and an idle layer owns nothing (SPEC §10.1, §10.2).
+   * Every pending timer this layer owns: the play-arrow reveal, the opening bursts and the exits that remove a
+   * collapsing balloon (issue #35). `stop()` clears them all, so a party that has been left cannot tick into
+   * the next one and an idle layer owns nothing (SPEC §10.1, §10.2, issue #12).
    */
   const timers: number[] = []
   // The tier decision lives in `ui/frameTier.ts`; the meter is fed every animation frame and also owns
@@ -333,7 +332,9 @@ export function createCelebration(
     raf = window.requestAnimationFrame(draw)
   }
 
-  /** The number of balloons this set: the bubbles she has left, capped at twelve (SPEC §10.1, issue #13). */
+  /** The number of balloons this set: the bubbles she has left, capped at twelve (SPEC §10.1, issue #13). It
+   *  is also the cap a refill cannot pass, which is what keeps the bunch from emptying rather than from
+   *  growing (issue #36). */
   function partySize(): number {
     return Math.min(opts.balloons(), MAX_BALLOONS)
   }
@@ -356,10 +357,18 @@ export function createCelebration(
 
   /** The bunch for the set this moment, hung at the rung the rule chose (issue #33). The rule answers the
    *  places inside the board, biggest first, which is also the paint order: back to front. It can answer
-   *  with fewer than the count asked for, because the count is the conservative lattice rather than a cap. */
+   *  with fewer than the count asked for, because the count is the conservative lattice rather than a cap.
+   *  A bunch that arrives as one set is staggered so it does not arrive as a flat wall (SPEC §10.1); the
+   *  slot a pop leaves later is refilled without that delay, so the blob never pauses (issue #36). */
   function hangBunch(): void {
     const places = placeBunch(opts.metrics(), rng, partySize())
-    for (let i = 0; i < places.length; i++) spawnBalloon(places[i] as Place, i)
+    for (let i = 0; i < places.length; i++) spawnBalloon(places[i] as Place, i, i * CELEBRATION.balloonStaggerMs)
+
+    // The debug step records the moment the party first shows a balloon (issue #18). A spawn makes no sound,
+    // because sound belongs to the pop only (issue #36), so this is reported here rather than in a chime
+    // timer - and once for the set rather than once for every balloon, which is what a restored party needs:
+    // it starts full and reports the hang (SPEC §14.1).
+    if (places.length > 0 && opts.onFirstBalloon !== undefined) opts.onFirstBalloon()
   }
 
   /**
@@ -368,6 +377,7 @@ export function createCelebration(
    * during the collapse lands on the balloon underneath. The removal is scheduled on the timer set `stop()`
    * clears, never by a `transitionend` listener (SPEC §10.1, §10.2), so a party she has left cannot remove an
    * element in the next one, and a balloon that is mid-collapse when the party is force-closed goes with it.
+   * The same exit refills the slot it leaves, which is what keeps the bunch from emptying (issue #36).
    */
   function popBalloon(balloon: Balloon): void {
     balloon.popped = true
@@ -376,7 +386,9 @@ export function createCelebration(
     // context may not exist yet. This tap is the gesture that may create it, exactly as Android requires
     // (SPEC §11); on a party she played into, unlock is a no-op.
     audio.unlock()
-    audio.playBalloon(balloon.chimeIndex)
+    // Issue #36: sound belongs to the pop only, so this is the only place a balloon makes it. The pitch is
+    // its index in the set she can see now, which is what `audio/synth.ts` reads it as (SPEC §11).
+    audio.playBalloon(balloons.indexOf(balloon))
 
     // The burst belongs to this pop and fires at pop time, from the balloon's own box (issue #27).
     const own = balloon.el.getBoundingClientRect()
@@ -387,9 +399,23 @@ export function createCelebration(
       const at = balloons.indexOf(balloon)
       if (at >= 0) balloons.splice(at, 1)
       balloon.el.remove()
-      // SPEC §10.1: pop the last one and a whole new set arrives. Issue #36 makes that one place at a time;
-      // until then the set is re-hung once the last balloon of this one has left the tree.
-      if (balloons.length === 0) hangBunch()
+
+      // Issue #36: the slot this balloon has left is filled by a fresh draw, so the bunch replaces itself one
+      // balloon at a time and never empties - she always has something to pop. The set is not re-hung: the
+      // bunch she sees is the one the rule answered, and only the gap this pop made is new. The cap is the
+      // party rather than the board (SPEC §8.4), so nothing here can put a balloon past the count the set was
+      // built from.
+      if (balloons.length >= partySize()) return
+
+      // The spot this balloon was fading out of is free by now, so a refill may drift into it (SPEC §10.1,
+      // *Popping*). `placeSlot` is the placement rule's single-balloon path, read against the bunch still
+      // hanging at the rung that bunch was placed at, and it answers `null` when no spot is free (issue #33).
+      const metrics = opts.metrics()
+      const place = placeSlot(balloons.map((entry) => entry.place), metrics, rng, bunchFactor(metrics, partySize()))
+      if (place === null) return
+
+      // No stagger delay, so this climb overlaps the collapse the slot came from: the blob never pauses.
+      spawnBalloon(place, balloons.length, 0)
     }
 
     // Reduced motion makes the collapse a single frame in the stylesheet, so there is no travel to wait for:
@@ -401,7 +427,7 @@ export function createCelebration(
     later(CELEBRATION.balloonCollapseMs, exit)
   }
 
-  function spawnBalloon(place: Place, index: number): void {
+  function spawnBalloon(place: Place, index: number, delayMs: number): void {
     const el = document.createElement('button')
     el.type = 'button'
     el.className = 'balloon'
@@ -421,10 +447,12 @@ export function createCelebration(
     // `fill: currentColor` in the stylesheet needs a colour to inherit (SPEC §10.1).
     const colour = BALLOON_COLORS[index % BALLOON_COLORS.length]
     el.style.color = colour === undefined ? '#ff8fab' : colour
-    // SPEC §10.1: staggered entry, so balloons do not arrive as one flat wall. The index is the order the
-    // rule answered in, which is also the paint order: biggest first, so the small balloons are hung in
-    // front of the big ones (issue #33).
-    el.style.animationDelay = `${index * CELEBRATION.balloonStaggerMs}ms`
+    // SPEC §10.1: staggered entry, so balloons do not arrive as one flat wall. The delay is the caller's:
+    // `hangBunch` staggers the set that arrives together, a refilled slot rises at once (issue #36). The
+    // index is the order the rule answered in, which is also the paint order: biggest first, so the small
+    // balloons are hung in front of the big ones (issue #33). A refill is appended last, so it paints in
+    // front of the bunch it joined - that is the one thing the rule's order cannot decide after a pop.
+    el.style.animationDelay = `${delayMs}ms`
     // Issue #34: the position is the place the rule answered, written as px against the board's origin
     // inside the overlay. The percent band and the wider-than-the-board spread this module used to compute
     // are gone: they were percentages of the overlay, which is not the board (issue #32).
@@ -440,15 +468,8 @@ export function createCelebration(
 
     root.appendChild(el)
 
-    const balloon: Balloon = { el, popped: false, place, chimeIndex: index }
+    const balloon: Balloon = { el, popped: false, place }
     balloons.push(balloon)
-
-    // SPEC §11: the entry chime rises in pitch with the set.
-    later(index * CELEBRATION.balloonStaggerMs, () => {
-      if (!running) return
-      audio.playBalloon(balloon.chimeIndex)
-      if (balloons.length === 1 && opts.onFirstBalloon !== undefined) opts.onFirstBalloon()
-    })
 
     el.addEventListener('click', () => {
       if (!running || balloon.popped) return
@@ -466,8 +487,9 @@ export function createCelebration(
     // The first drawn frame has no previous frame to integrate from, even if the last party ran minutes
     // ago, so the burst does not jump by the gap between parties.
     drawnAt = 0
-    // Issue #28: read the party size once, at the moment the party starts, and derive the arrow's delay
-    // from it. A respawn can change the count, so the count the delay was built from is this one.
+    // Issue #28: read the party size once, at the moment the party starts, and derive the arrow's delay from
+    // it. The refills keep the set at this count, so the arrow is not timed against a bunch the party never
+    // had (issue #36).
     const size = partySize()
     const playDelay = playButtonDelayMsFor(size)
     // The inline value wins over the stylesheet's `--play-button-delay` fallback, and `reveal` below uses
