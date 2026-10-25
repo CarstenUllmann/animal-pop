@@ -289,9 +289,9 @@ board; the board itself dims and stops accepting taps (except balloon taps).
 |-------|--------|---------|
 | 0 | 0ms | Pop burst on the final goal, ring snaps full |
 | 1 | 0–460ms | Fireworks begin behind/above the board, tier from §8.4. The party opens with a three-burst volley at 0/180/460ms |
-| 2 | 0–2.5s | Balloons climb from below the board edge, one at a time, 1200ms each with a decelerating ease and a 120ms stagger, then settle into a swaying, overlapping bunch in the upper half of the board. The first lands at ~1.2s, the twelfth at ~2.5s; the float never stops |
+| 2 | 0–2.5s | Balloons climb from below the board edge, one at a time, 1200ms each with a decelerating ease and a 120ms stagger, then settle into a swaying, overlapping bunch **inside** the board (see *The bunch*). The first lands at ~1.2s, the twelfth at ~2.5s; the float never stops |
 | 3 | after the last balloon lands: `1200 + (n−1) × 120` ms (2.52s at twelve balloons, 1.44s at three) | Big pulsing ▶ button fades in, bottom-centre, already clear of the balloons |
-| 4 | until she taps ▶ | Everything keeps running (slow ambient fireworks every ~1s, balloons respawn if all popped) |
+| 4 | until she taps ▶ | Everything keeps running (slow ambient fireworks every ~1s, and the bunch replaces itself as she pops, so it never empties) |
 
 - Balloon tap → pop + sparkle burst + pop sound (pitch from a pentatonic set). Satisfying.
 - Balloons are **optional**: ▶ is tappable from the moment it appears.
@@ -299,23 +299,55 @@ board; the board itself dims and stops accepting taps (except balloon taps).
 - If `fireworkTier === "small"` (careless play) the fanfare is replaced by a soft two-note
   "aww" chime and only a few balloons appear. Quieter, **not** sad — there is no fail.
 
-**The bunch (issues #25, #26).** A balloon is `min(boardW × 0.13, boardH × 0.15)` CSS px, floored
-at 86px so even a −6% jittered balloon clears the 80px tap target, and jittered ±6% per balloon:
-90px on the target tablet, about twice the 44px it used to be.
-The size is written by `ui/layout.ts` as `--balloon-px`, not as a fixed pixel value. The resting
-band is `bottom: 50%–78%` on a gentle arc (outermost lowest, middle highest, ±5% jitter), spread
-`left: −8%…108%` so twelve balloons of this size overlap and the outermost hang off the edge. Each
-balloon is three elements — `.balloon` (button, owns the rise so the hit box travels with it) →
-`.balloon__float` (owns the endless ±7px sway over 6–7s and ±8px bob over 3–3.5s) →
-`.balloon__shape` (owns the 260ms pop) — one transform owner each, which is what lets a balloon
-tapped mid-rise pop exactly like one at rest. Period, phase and direction come from the injected
-`Rng`, so the bunch never moves in lockstep and a session still replays.
+**Popping (issue #35).** A tapped balloon pops, sounds, and then collapses to nothing over 180ms and is
+removed from the layer. Nothing is left behind that looks poppable — the `scale(0.55)` stub that used to sit there
+until every balloon in the set was popped kept its full hit box and swallowed taps, which is what made
+her tap the same balloon over and over. The hit box goes with the balloon, and while it is collapsing it
+takes no taps (`pointer-events: none`), so a tap lands on the balloon underneath it. The removal is
+scheduled by a timer the module owns and clears, the same rule as every other timer in the celebration,
+rather than by a `transitionend` listener; under `prefers-reduced-motion` the pop and the removal are the
+same step. The `.balloon__shape` owns the collapse (transform and opacity) as well as the pop, so the
+one-transform-owner rule still holds.
+
+The bunch replaces itself as she pops (issue #36): a popped slot gets a new balloon that rises into a fresh
+position inside the blob, immediately, with no stagger delay and no sound — sound belongs to the pop — so the
+bunch never empties and she always has something to pop. The cap stays twelve whatever the rack holds (§8.4),
+and the play arrow's delay is still computed from the original party size (§10.1 phase 3).
+
+**The bunch (issues #32, #33, #34).** A balloon is `min(boardW × 0.195, boardH × 0.225)` CSS px — 1.5× the
+factors this section used before — floored at 120px so a −6% jittered balloon still clears the 90px tap
+target, and jittered ±6% per balloon: 135px on the target tablet. The size is written by `ui/layout.ts` as
+`--balloon-px`, not as a fixed pixel value.
+
+Positions are computed against the painted board square, not as percentages of the overlay: `ui/layout.ts`
+owns the geometry and hands the celebration `boardPx`, the board's offset inside the overlay,
+`balloonPx`, `balloonMarginPx` and whether the bunch fits. A balloon rests fully inside the board on the
+left, right and top — the resting place keeps half the balloon plus the float amplitude plus 16px from the
+board edge, so the ±7px sway and ±8px bob can never carry a balloon past the border. The bottom edge is
+the deliberate exception: balloons climb from below it, so "inside the board" is a rule about the resting
+place, not about the climb.
+
+The bunch is a scattered blob, not a row: up to twelve balloons, each centre at least 0.55 × the mean of
+its own and its neighbour's jittered width away from every other centre, so no balloon is fully buried. On
+the target tablet that is two rows of six with about 56% of each balloon exposed. When a board cannot hold
+twelve at that spacing, size holds first, spacing tightens to a 40% exposure floor, and only then does the
+count drop — a phone gets about five, which is still a bunch she can read. Taps go to the balloon painted
+on top, and the back of the blob is painted first so it reads as behind. The play arrow keeps its own 16px
+band clear of its box, so a balloon can never sit on the button she uses to move on.
+
+Placement is bounded rejection sampling on the injected `Rng`, so the same session draws the same bunch. A
+rotation re-clamps every balloon already hanging — it moves them, it does not replay the rise. Each balloon
+is still three elements — `.balloon` (button, owns the rise so the hit box travels with it) →
+`.balloon__float` (owns the endless ±7px sway over 6–7s and ±8px bob over 3–3.5s) → `.balloon__shape`
+(owns the pop and the collapse) — one transform owner each, which is what lets a balloon tapped mid-rise
+pop exactly like one at rest. Period, phase and direction come from the injected `Rng`, so the bunch never
+moves in lockstep and a session still replays.
 
 **The arrow (issue #28).** The ▶ waits for the last balloon to settle rather than a fixed beat: the
 delay is computed per party when the party starts and written inline as `--play-button-delay`, with
 `CELEBRATION.playButtonDelayMs` only as the stylesheet fallback. It is in the DOM from the start,
-`next--ready` reveals and enables it in one step, and it sits bottom-centre where the upper-half
-balloons can never cover it.
+`next--ready` reveals and enables it in one step, and it sits bottom-centre with its own 16px band clear of
+the blob, so a balloon can never land on it.
 
 ### 10.2 Performance
 
@@ -449,12 +481,14 @@ device" gate — she plays however she's holding it).
 - Portrait fallback: panel stacks above the board, goals side by side, bubble rack becomes a
   horizontal band across the panel width (ADR-0001: the rack sized for 35 wraps to 3 rows at the
   target density, inside the panel row it has). Board stays square and centred.
-- Party balloons are sized from the board area (`min(boardW × 0.13, boardH × 0.15)`, base floor
-  86px so a −6% jittered balloon still clears the 80px tap target, ~90px on the target tablet) and a
-  rotation recomputes that size like every other metric (§10.1, issue #25).
+- Party balloons are sized from the board area (`min(boardW × 0.195, boardH × 0.225)`, base floor
+  120px so a −6% jittered balloon still clears the 90px tap target, ~135px on the target tablet), rest
+  fully inside the painted board with 16px of space to the border plus the float amplitude, and a
+  rotation recomputes both the size and the resting places (§10.1, issues #25, #32, #33).
 - `prefers-reduced-motion: reduce` → shorter, non-scaling animations; nothing becomes
   unreadable. The balloons are bigger but already in their resting places, with no rise and no
-  float; the particle canvas is not shown at all.
+  float; a popped balloon is removed in the same step as the pop, and the particle canvas is not
+  shown at all.
 
 ---
 
