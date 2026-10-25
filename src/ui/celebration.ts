@@ -10,6 +10,13 @@ export type { FrameTier } from './frameTier'
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
 /**
+ * The balloon colours. The shape is filled with `currentColor` in the stylesheet, and nothing set a colour,
+ * so every balloon rendered white. A party of white ovals does not read as balloons; the palette only ever
+ * changes the decoration, never the tap target or its sound.
+ */
+const BALLOON_COLORS = ['#ff8fab', '#ffd166', '#7bdff2', '#a0e57c', '#c9a7ff', '#ff9f68']
+
+/**
  * The celebration layer (SPEC §10, issues #12 and #13). Balloons rise one at a time so the scene
  * does not arrive as one flat wall, each chimes on entry and pops on tap, and popping the last one
  * brings a whole new set. The number of balloons is the bubbles she has left, capped at twelve. The
@@ -122,6 +129,9 @@ export function createCelebration(
   // changes rather than on every frame.
   const meter = createFrameTierMeter()
   let shownTier: FrameTier = '60fps'
+  // Issue #12: the tier has to be observable from the first frame of the party, not only once it changes.
+  // `setTier` writes on change, so without this the healthy party carried no `data-tier` at all.
+  root.dataset.tier = shownTier
 
   function later(ms: number, run: () => void): void {
     // Only pending timers are kept: a party that is left open respawns a set of balloons every time she
@@ -241,6 +251,9 @@ export function createCelebration(
     el.className = 'balloon'
     el.setAttribute('aria-label', 'Balloon')
     el.append(balloonShape())
+    // `fill: currentColor` in the stylesheet needs a colour to inherit (SPEC §10.1).
+    const colour = BALLOON_COLORS[index % BALLOON_COLORS.length]
+    el.style.color = colour === undefined ? '#ff8fab' : colour
     // SPEC §10.1: staggered entry, so balloons do not arrive as one flat wall.
     el.style.animationDelay = `${index * CELEBRATION.balloonStaggerMs}ms`
     // Spread across the party size, so a small set does not look like a broken row of twelve.

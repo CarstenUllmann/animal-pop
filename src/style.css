@@ -273,7 +273,10 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* SPEC §10.1 phase 3: the play arrow fades in bottom-centre. The balloons are absolute and sit above
+     it, so the arrow never lands on top of a balloon she is trying to pop. */
+  justify-content: flex-end;
+  padding-bottom: 4%;
   background: rgba(9, 12, 24, 0.35);
 }
 
@@ -327,11 +330,13 @@ body {
   align-items: center;
 }
 
-/* SPEC §10: >= 36 CSS px balloons, >= 90 CSS px tap target. The balloons are placed by the
-   layer (`left: N%`), so they are positioned rather than flowed. */
+/* SPEC §10.1 phase 2: balloons rise from the bottom. They rest above the play arrow (the row the
+   celebration layer lays out at the bottom-centre), and the keyframes carry them up from below the
+   edge, so the entrance reads as a rise rather than a fade. The layer places them with `left: N%`,
+   so they are positioned rather than flowed. */
 .balloon {
   position: absolute;
-  top: 30%;
+  bottom: 26%;
   width: 44px;
   height: 52px;
   margin: 0 6px;
@@ -374,7 +379,7 @@ body {
 @keyframes balloon-rise {
   from {
     opacity: 0;
-    transform: translateY(30%) scale(0.7);
+    transform: translateY(280%) scale(0.7);
   }
   to {
     opacity: 1;

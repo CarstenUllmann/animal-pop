@@ -104,6 +104,17 @@ describe('celebration stylesheet', () => {
     expect(rule('.next')).toContain('animation-delay')
   })
 
+  it('places the play arrow bottom-centre and rises the balloons from below it (SPEC §10.1)', () => {
+    // The party is an overlay over the board, so its composition has to leave the balloons reachable and
+    // the way out of the level unmistakable: the arrow owns the bottom-centre, the balloons rest above it.
+    expect(rule('.celebration')).toContain('justify-content: flex-end')
+    expect(rule('.celebration')).toContain('padding-bottom: 4%')
+    expect(rule('.balloon')).toContain('bottom: 26%')
+    expect(rule('.balloon')).not.toContain('top: 30%')
+    // The rise has to travel from below the resting row, not just fade in where it lands.
+    expect(css).toContain('transform: translateY(280%) scale(0.7)')
+  })
+
   it('dim reads as a scrim on the overlay itself, not as a class on the board', () => {
     expect(rule('.celebration')).toContain('background: rgba(9, 12, 24, 0.35)')
     expect(css).not.toContain(':has(')

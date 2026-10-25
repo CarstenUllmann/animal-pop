@@ -64,4 +64,19 @@ describe('celebration module (issues #12 and #13)', () => {
     expect(draw).not.toContain('workStart')
     expect(source).toContain('createFrameTierMeter()')
   })
+
+  it('exposes the tier from the first party frame, not only after a change (issue #12)', () => {
+    // `setTier` writes on change, so a healthy party carried no `data-tier` at all: the one observable
+    // the device check has said nothing until the tablet was already in trouble.
+    expect(source).toContain('root.dataset.tier = shownTier')
+    const assignments = source.match(/root\.dataset\.tier = shownTier/g) ?? []
+    expect(assignments.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('gives every balloon a colour, because the stylesheet fills it with currentColor', () => {
+    // The SVG body is `fill: currentColor`; nothing set the inherited colour, so the party was a row of
+    // white ovals rather than balloons (SPEC §10.1).
+    expect(source).toContain('el.style.color')
+    expect(source).toContain('BALLOON_COLORS')
+  })
 })
