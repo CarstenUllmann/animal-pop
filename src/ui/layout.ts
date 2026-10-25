@@ -24,6 +24,10 @@ export interface LayoutMetrics {
   goalPx: number
   /** Rack bubble size and how many fit a row (SPEC §8.2). */
   bubblePx: number
+  /**
+   * Columns the rack lays out: 3-4 in landscape (SPEC §13), and as many as the panel width allows in
+   * portrait, where §13 makes the rack a horizontal band across the panel.
+   */
   rackColumns: number
   /** The play arrow, which is a tap target (SPEC §10.1, §13). */
   playPx: number
@@ -44,7 +48,7 @@ export interface LayoutMetrics {
   panelContentPx: number
   /** What the level label and the two goal cards take before the rack is allowed any. */
   panelChromePx: number
-  /** SPEC §8.2's full rack of up to 39 bubbles, the wrapped rows it needs, and the rows fit at once. */
+  /** The rack the fit is sized for (ADR 0001: the measured 35), the wrapped rows it needs, and whether they fit at once. */
   rackBubbles: number
   rackRows: number
   rackRowsFit: number
@@ -97,8 +101,14 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   // place, and the mute is positioned rather than flowed, so it takes no row of its own.
   const panelChromePx = LAYOUT.interactiveMinPx + 2 * goalCardRowPx(goalPx)
   const rackRowPx = bubblePx + LAYOUT.chrome.rackRowPx
-  const rackColumns = rackColumnsFor(rackWidthFor(panelColumnPx), bubblePx)
   const rackBubbles = LAYOUT.rackSizingBubbles
+  // In landscape the rack keeps §8.2's 3-4 per row. In portrait §13 makes it a horizontal band across the
+  // panel, so the columns are whatever the panel width gives it, capped by the rack itself - a band cannot
+  // have more columns than bubbles.
+  const rackWidth = rackWidthFor(panelColumnPx)
+  const rackColumns = portrait
+    ? bandColumnsFor(rackWidth, bubblePx, rackBubbles)
+    : rackColumnsFor(rackWidth, bubblePx)
   const rackRows = Math.ceil(rackBubbles / rackColumns)
   const rackRowsFit = Math.max(0, Math.floor((panelContentPx - panelChromePx - 2 * LAYOUT.chrome.rackPaddingPx) / rackRowPx))
   const boardPx = cell * Math.max(grid.rows, grid.cols)
@@ -166,6 +176,17 @@ function rackColumnsFor(rackWidth: number, bubblePx: number): number {
   const rowWidth = bubblePx + LAYOUT.chrome.rackRowPx
   const fits = Math.floor((rackWidth + LAYOUT.chrome.rackRowPx) / rowWidth)
   return between(fits, LAYOUT.rackColumnsMin, LAYOUT.rackColumnsMax)
+}
+
+/**
+ * SPEC §13: in portrait the rack is a horizontal band across the panel width, so it takes as many columns as
+ * the width gives it, capped by the bubbles the rack holds - a band cannot have more columns than bubbles, and
+ * the fit has to describe the rack it is sizing for (ADR 0001). `rackColumnsMin` stays the floor, so a narrow
+ * panel still keeps §8.2's 3 per row.
+ */
+function bandColumnsFor(rackWidth: number, bubblePx: number, rackBubbles: number): number {
+  const fits = Math.floor((rackWidth + LAYOUT.chrome.rackRowPx) / (bubblePx + LAYOUT.chrome.rackRowPx))
+  return between(fits, LAYOUT.rackColumnsMin, rackBubbles)
 }
 
 /** The width the rack has: the panel's content box, less the chrome the stylesheet reserves around it. */

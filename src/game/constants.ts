@@ -148,11 +148,12 @@ export const LAYOUT = {
   rackColumnsMin: 3,
   rackColumnsMax: 4,
   /**
-   * SPEC §8.2: the rack is sized so a full rack of up to 39 fits the panel height at once. The measured
-   * plateau is 35 (SPEC §9.1), so 39 is the ceiling the panel has to hold rather than a level she plays;
-   * the layout charges it against the panel row, because the panel cannot scroll (issue #10).
+   * SPEC §8.2: the rack is sized so a full rack fits the panel height at once (issue #10). ADR 0001 amends
+   * the number to the measurement: 35 is the largest rack a level shows at once, which is also where §9.1's
+   * ramp tops out, so it is both the sizing number and the rack's capacity. 39 was the pre-measurement guess
+   * the clause was written from, and no level reaches it.
    */
-  rackSizingBubbles: 39,
+  rackSizingBubbles: 35,
   /**
    * The chrome the stylesheet reserves inside the panel and the board area. Each value is `style.css`'s own
    * declaration read at 1rem = 16 CSS px, rounded up: the layout model may not charge less than the rule

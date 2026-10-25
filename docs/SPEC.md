@@ -167,8 +167,10 @@ than the animation.
 - A rack of bubbles on the left panel, below the goal cards. Starts full at level start.
 - **One bubble pops per valid tap.** Nothing else consumes bubbles.
 - The rack drains visibly with a pop + sparkle, tied to the tap that spent it.
-- Displayed as a compact grid (3–4 per row, chosen so a full rack of up to ~39 fits the panel
-  height without scrolling). Bubble size ~22–26px; the rack reads as a block of bubbles that
+- Displayed as a compact grid (3–4 per row in landscape, chosen so a full rack fits the panel
+  height without scrolling). ADR-0001 sizes that rack from the measurement — 35, where §9.1's ramp
+  tops out — rather than the ~39 written before the rack was measured; in portrait the grid is the
+  horizontal band §13 describes. Bubble size ~22–26px; the rack reads as a block of bubbles that
   visibly shrinks. Rows disappearing is the legible signal — she never has to count.
 
 ### 8.3 The last bubble never drains
@@ -390,7 +392,8 @@ device" gate — she plays however she's holding it).
 - All sizing in viewport units / `clamp()` / `vmin`, no fixed pixel layout. Must survive the
   Pixel C's 1.41 aspect ratio and Chrome UI resizing.
 - Portrait fallback: panel stacks above the board, goals side by side, bubble rack becomes a
-  horizontal row (wrap to 2 rows if needed). Board stays square and centred.
+  horizontal band across the panel width (ADR-0001: the rack sized for 35 wraps to 3 rows at the
+  target density, inside the panel row it has). Board stays square and centred.
 - `prefers-reduced-motion: reduce` → shorter, non-scaling animations; nothing becomes
   unreadable.
 
@@ -648,7 +651,7 @@ pacing/party slack/sound volume. Ship v1.
 | PWA install unsupported / flaky on old WebView | M0 kill-criterion → Capacitor APK early |
 | Old GPU can't hold 60fps with fireworks | Particle pooling, DPR cap 2, automatic 30fps degrade tier |
 | Mechanic isn't actually fun for her | M1 ships the bare loop first; pivot to merge-drop is a core rewrite, decide early |
-| Bubble rack grows to 39+ items and looks cluttered | 3–4 per row grid, sized to the panel; `partyPct` (ratio, not count) drives celebration intensity |
+| Bubble rack grows to the measured 35 items and looks cluttered | 3–4 per row grid in landscape, the portrait band, sized to the panel; `partyPct` (ratio, not count) drives celebration intensity |
 | "Fewer taps" lesson is invisible | Rack drains on every tap with the same animation that becomes the balloons |
 | Art swap becomes a refactor | Single manifest `animals.ts`; stable ids; data-only change |
 

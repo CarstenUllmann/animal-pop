@@ -543,9 +543,11 @@ body {
 }
 
 /* SPEC §13/§8.1 (issue #8): the rack shows the level's whole starting size, so a spent bubble reads as a
-   gap. It is a wrapping grid rather than one row: the plateau rack is 35 bubbles (SPEC §9.1, measured by
-   the simulator), which no panel that must not scroll can show in a single row. Issue #19's "two lines"
-   is what the early levels look like, not what level 11 is. */
+   gap. It is a wrapping grid rather than one row: the rack is 35 bubbles (SPEC §9.1, measured by the
+   simulator), which no panel that must not scroll can show in a single row. Issue #19's "two lines"
+   is what the early levels look like, not what level 11 is. The column count comes from the layout module:
+   3-4 in landscape, and in portrait the horizontal band §13 describes (ADR-0001), which is why the fallback
+   below is not the number the game runs with. */
 .rack {
   display: grid;
   grid-template-columns: repeat(4, 22px);

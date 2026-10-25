@@ -91,14 +91,14 @@ describe('layout on the target tablet (SPEC §13)', () => {
  * mirrored, so these are the same measurements `style.css` makes (styles.test.ts compares the mirror).
  */
 describe('the panel shows everything at once (SPEC §8.2, §13, issue #10)', () => {
-  it('holds the level label, both goal cards and a full rack of 39 in the panel column', () => {
+  it('holds the level label, both goal cards and the whole rack in the panel column', () => {
     const metrics = computeLayout(TABLET, GRID)
 
-    // SPEC §8.2 sizes the rack for up to 39 bubbles, above the measured plateau of 35, so the whole rack is
-    // visible at once rather than scrolled. At 4 per row that is 10 wrapped rows.
+    // ADR 0001 sizes the rack from the measurement, 35, which is where §9.1's ramp tops out. In landscape the
+    // rack keeps §8.2's 3-4 per row, so at 4 per row that is 9 wrapped rows.
     expect(metrics.rackBubbles).toBe(LAYOUT.rackSizingBubbles)
     expect(metrics.rackRows).toBe(Math.ceil(LAYOUT.rackSizingBubbles / metrics.rackColumns))
-    // 574 - 180 - 16 for the rack's own padding, in rows of 29: thirteen rows fit where ten are needed.
+    // 574 - 180 - 16 for the rack's own padding, in rows of 29: thirteen rows fit where nine are needed.
     expect(metrics.rackRowsFit).toBe(13)
     expect(metrics.rackRowsFit).toBeGreaterThanOrEqual(metrics.rackRows)
     expect(metrics.rackRowsFit * metrics.rackColumns).toBeGreaterThanOrEqual(LAYOUT.rackSizingBubbles)
@@ -115,7 +115,7 @@ describe('the panel shows everything at once (SPEC §8.2, §13, issue #10)', () 
     expect(headroom).toBeGreaterThanOrEqual(3 * (metrics.bubblePx + LAYOUT.chrome.rackRowPx))
   })
 
-  it('the rack also fits at the measured plateau of 35, the size the earlier test asserted (issue #8)', () => {
+  it('the same fit holds at the measured plateau, which is what ADR 0001 sizes for (issue #8)', () => {
     const metrics = computeLayout(TABLET, GRID)
     const plateauRows = Math.ceil(35 / metrics.rackColumns)
     expect(plateauRows).toBeLessThanOrEqual(metrics.rackRowsFit)
@@ -131,19 +131,29 @@ describe('the panel shows everything at once (SPEC §8.2, §13, issue #10)', () 
     expect(oneRow).toBeGreaterThan(metrics.rackHeightPx)
   })
 
-  it('in portrait the panel row cannot hold the whole measured rack, so the rack is clipped rather than scrolled', () => {
+  it('in portrait the rack is §13\'s band across the panel width, and the sized rack fits the panel row (ADR 0001)', () => {
     const portrait = computeLayout({ width: 600, height: 1024 }, GRID)
-    // SPEC §13's portrait clause ("wrap to 2 rows if needed") was written before the rack was measured: a
-    // 600x1024 panel row is 461 CSS px, and the level label plus two cards leaves 239 for the rack, which is
-    // 7 rows of the 10 the plateau needs. The panel does not scroll, so the rack stops there - this is the
-    // one criterion that can only be closed on the device, and it is reported rather than asserted away.
+
+    // The measurements are the ones recorded before the criterion was amended: a 600x1024 panel row is 461 CSS
+    // px, the level label plus two goal cards take 180 of it, and 239 is left for the rack. What changed is the
+    // rack. Sized from the measurement rather than the pre-measurement guess, and laid out as §13's horizontal
+    // band, it needs 3 rows of the 7 those measurements allow - so this is now the criterion holding, not a
+    // shortfall reported against it.
+    const bandWidth = 600 - 2 * LAYOUT.chrome.panelPaddingXPx - LAYOUT.chrome.rackMarginPx - 2 * LAYOUT.chrome.rackPaddingXPx
+    const rackRowPx = portrait.bubblePx + LAYOUT.chrome.rackRowPx
+    expect(bandWidth).toBe(532)
+    expect(portrait.rackColumns).toBe(17)
+    expect(portrait.rackColumns * rackRowPx).toBeLessThanOrEqual(bandWidth)
+    expect(portrait.rackRows).toBe(3)
     expect(portrait.rackRowsFit).toBe(7)
-    expect(portrait.rackFitsPanel).toBe(false)
-    // An early level's rack still fits at once, which is what §13's two lines meant: level 1 starts at 12
-    // bubbles (SPEC §9.1), three rows of four.
+    expect(portrait.rackFitsPanel).toBe(true)
+
+    // An early level is one row of the band plus a second: level 1 starts at 12 bubbles (SPEC §9.1).
     expect(Math.ceil(12 / portrait.rackColumns)).toBeLessThanOrEqual(portrait.rackRowsFit)
-    // And the row that is shown is inside the panel: the panel keeps its reserved place and its cards.
-    expect(portrait.rackRowsFit * (portrait.bubblePx + LAYOUT.chrome.rackRowPx) + 2 * LAYOUT.chrome.rackPaddingPx + portrait.panelChromePx).toBeLessThanOrEqual(portrait.panelContentPx)
+
+    // And what the band shows is inside the panel: it keeps its reserved place and its cards.
+    expect(portrait.rackRows * rackRowPx + 2 * LAYOUT.chrome.rackPaddingPx + portrait.panelChromePx)
+      .toBeLessThanOrEqual(portrait.panelContentPx)
   })
 })
 
@@ -205,12 +215,13 @@ describe('nothing is a fixed pixel layout, and a too-small device is flagged (SP
   it('holds the rack inside the panel on every device that gets the target cell, in landscape', () => {
     for (const viewport of viewports) {
       const metrics = computeLayout(viewport, GRID)
-      // Portrait is the exception, and it is asserted as its own case above (issue #10).
-      if (metrics.cell >= LAYOUT.tapTargetCssPx && !metrics.portrait) expect(metrics.rackFitsPanel).toBe(true)
+      // The band is what makes portrait fit at the target size; a device below §13's assumed size is still
+      // the case the flag reports rather than a layout that can be fixed here.
+      if (metrics.cell >= LAYOUT.tapTargetCssPx) expect(metrics.rackFitsPanel).toBe(true)
     }
 
     // The phone is smaller than the places the panel has to hold, which is the same fact the flag reports:
-    // the rack is clipped there rather than scrolled, and no layout can make 39 bubbles fit 294 CSS px.
+    // the rack is clipped there rather than scrolled, and no layout can make 35 bubbles fit 294 CSS px.
     const phone = computeLayout({ width: 480, height: 320 }, GRID)
     expect(phone.rackFitsPanel).toBe(false)
     expect(phone.panelContentPx).toBeLessThan(phone.panelChromePx + phone.rackHeightPx)
