@@ -1,4 +1,11 @@
-import { CELEBRATION, LAYOUT, MAX_BALLOONS, PARTICLES } from '../game/constants'
+import {
+  CELEBRATION,
+  FIREWORK_COLORS,
+  LAYOUT,
+  MAX_BALLOONS,
+  PARTICLES,
+  playButtonDelayMsFor,
+} from '../game/constants'
 import type { AudioPlayer } from '../audio/player'
 import type { PartyTier, Rng } from '../game/types'
 import { hasMatchMedia } from './capabilities'
@@ -20,8 +27,8 @@ const BALLOON_COLORS = ['#ff8fab', '#ffd166', '#7bdff2', '#a0e57c', '#c9a7ff', '
  * The celebration layer (SPEC §10, issues #12 and #13). Balloons rise one at a time so the scene
  * does not arrive as one flat wall, each chimes on entry and pops on tap, and popping the last one
  * brings a whole new set. The number of balloons is the bubbles she has left, capped at twelve. The
- * play button appears after the fanfare has run, not at the same time, and it becomes visible and
- * tappable in the same step.
+ * play button appears once the last balloon has settled, and it becomes visible and tappable in the
+ * same step (issue #28), while the balloons keep swaying behind it (issue #26).
  *
  * This is the only particle system in the game. Density is capped by `PARTICLES` and the burst
  * objects come from `ui/pool.ts`, which never grows past its capacity, so a burst cannot make the
@@ -55,7 +62,14 @@ interface Particle {
   y: number
   vx: number
   vy: number
+  /** Seconds left before the particle is released. */
   life: number
+  /** The life this particle spawned with, so its age is a fraction rather than a raw count. */
+  maxLife: number
+  /** The radius at spawn, in CSS px. It shrinks as the particle dies (issue #27). */
+  radius: number
+  /** The hue is taken at spawn, never per frame: assigning it while drawing would burn main-thread time. */
+  color: string
 }
 
 interface Balloon {
@@ -91,12 +105,21 @@ export function createCelebration(
   root.appendChild(canvas)
   const ctx = canvas.getContext('2d')
 
-  const particles = createPool<Particle>(PARTICLES.capacity, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0 }))
+  const particles = createPool<Particle>(PARTICLES.capacity, () => ({
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    life: 0,
+    maxLife: 0,
+    radius: 0,
+    color: PARTICLES.whiteColor,
+  }))
   const balloons: Balloon[] = []
 
   // SPEC §10.1 phase 3 (issue #13): the big pulsing ▶ under the balloons. It is in the DOM from the
   // moment the party starts, so it is tappable the instant the fade-in reveals it - the delay is CSS,
-  // mirroring CELEBRATION.playButtonDelayMs.
+  // written inline per party from the last balloon's landing (issue #28), with the constant as fallback.
   const row = document.createElement('div')
   row.className = 'celebration__row'
   const play = document.createElement('button')
@@ -167,6 +190,24 @@ export function createCelebration(
   }
 
   /**
+   * A burst draws from a 2-3 hue subset of the palette (issue #27). The subset is chosen once, from
+   * the injected `Rng`, and the particles take their hue from it at spawn: the colour is decided while
+   * there is time, not per frame, and a replayed session gets the same bursts (SPEC §2).
+   */
+  function burstHues(): readonly string[] {
+    const count = PARTICLES.burstHuesMin + Math.floor(rng.next() * (PARTICLES.burstHuesMax - PARTICLES.burstHuesMin + 1))
+    const offset = Math.floor(rng.next() * FIREWORK_COLORS.length)
+    // A 1-3 stride walks distinct entries: the palette is seven long and a burst takes at most three.
+    const stride = 1 + Math.floor(rng.next() * 3)
+    const hues: string[] = []
+    for (let i = 0; i < count; i++) {
+      const hue = FIREWORK_COLORS[(offset + i * stride) % FIREWORK_COLORS.length]
+      if (hue !== undefined) hues.push(hue)
+    }
+    return hues
+  }
+
+  /**
    * A burst takes only what the pool can hand out, so a burst that would exceed the cap drops
    * particles (SPEC §5). Under reduced motion the layer is hidden by CSS, so drawing a burst it cannot
    * show is only work: the debug row would report live particles while nothing renders (issue #12).
@@ -174,6 +215,7 @@ export function createCelebration(
   function spawnBurst(x: number, y: number): void {
     if (reducedMotion) return
     const perBurst = meter.tier() === '30fps' ? PARTICLES.degradePerBurst : PARTICLES.perBurst
+    const hues = burstHues()
     for (let i = 0; i < perBurst; i++) {
       const particle = particles.acquire()
       if (particle === null) break
@@ -184,7 +226,13 @@ export function createCelebration(
       particle.y = y
       particle.vx = Math.cos(angle) * speed
       particle.vy = Math.sin(angle) * speed
-      particle.life = PARTICLES.lifeSeconds * (0.7 + rng.next() * 0.4)
+      particle.maxLife = PARTICLES.lifeSeconds * (0.7 + rng.next() * 0.4)
+      particle.life = particle.maxLife
+      particle.radius = PARTICLES.radiusMin + rng.next() * (PARTICLES.radiusMax - PARTICLES.radiusMin)
+      // About one in five is near-white, so a burst sparkles instead of reading as confetti.
+      const hue = hues[i % hues.length]
+      const white = rng.next() < PARTICLES.whiteShare
+      particle.color = white || hue === undefined ? PARTICLES.whiteColor : hue
     }
   }
 
@@ -227,11 +275,24 @@ export function createCelebration(
     ctx.save()
     ctx.scale(dpr, dpr)
     for (const particle of particles.active()) {
-      ctx.globalAlpha = Math.max(0, Math.min(1, particle.life / PARTICLES.lifeSeconds))
-      ctx.fillStyle = '#ffd84d'
+      // The age is a fraction of this particle's own life, so the hot core and the shrink are the same
+      // shape for a short spark and a long one (issue #27).
+      const age = Math.max(0, Math.min(1, particle.life / particle.maxLife))
+      // The radius shrinks as it dies, so the burst dissolves instead of blinking out.
+      const radius = particle.radius * (0.35 + 0.65 * age)
+      ctx.globalAlpha = age
+      ctx.fillStyle = particle.color
       ctx.beginPath()
-      ctx.arc(particle.x, particle.y, PARTICLES.particleSize, 0, Math.PI * 2)
+      ctx.arc(particle.x, particle.y, radius, 0, Math.PI * 2)
       ctx.fill()
+      // A white-hot core for the first fifth of the particle's life, which is what makes the burst read
+      // as a firework rather than a handful of coloured dots.
+      if (age > 1 - PARTICLES.hotCoreLifeFraction) {
+        ctx.fillStyle = PARTICLES.whiteColor
+        ctx.beginPath()
+        ctx.arc(particle.x, particle.y, radius * 0.45, 0, Math.PI * 2)
+        ctx.fill()
+      }
     }
     ctx.restore()
 
@@ -243,22 +304,67 @@ export function createCelebration(
     return Math.min(opts.balloons(), MAX_BALLOONS)
   }
 
+  /** Where along the wider-than-the-board spread this balloon hangs, in `left` percent (issue #25). */
+  function spreadLeft(index: number, size: number): number {
+    const span = LAYOUT.balloonSpreadEnd - LAYOUT.balloonSpreadStart
+    return LAYOUT.balloonSpreadStart + (span * index) / (size - 1)
+  }
+
+  /** ±5% of the resting band, so the arc is a bunch rather than a curve drawn with a ruler (issue #25). */
+  function bandJitter(): number {
+    const band = LAYOUT.balloonBandBottomMax - LAYOUT.balloonBandBottomMin
+    return (rng.next() * 2 - 1) * band * 0.05
+  }
+
   function spawnBalloon(index: number): void {
-    if (balloons.length >= partySize()) return
+    const size = partySize()
+    if (balloons.length >= size) return
 
     const el = document.createElement('button')
     el.type = 'button'
     el.className = 'balloon'
     el.setAttribute('aria-label', 'Balloon')
-    el.append(balloonShape())
+    // SPEC §10.1 (issue #25): three elements, so each has one transform owner. The button carries the
+    // rise (so the hit box travels with the balloon), the float span carries the endless sway/bob, and
+    // the shape span carries the pop. A single element could not do all three: an animation holding
+    // `transform` beats the pop transition, which is the mid-rise silent pop this structure fixes.
+    const float = document.createElement('span')
+    float.className = 'balloon__float'
+    const shape = document.createElement('span')
+    shape.className = 'balloon__shape'
+    shape.append(balloonShape())
+    float.append(shape)
+    el.append(float)
+
     // `fill: currentColor` in the stylesheet needs a colour to inherit (SPEC §10.1).
     const colour = BALLOON_COLORS[index % BALLOON_COLORS.length]
     el.style.color = colour === undefined ? '#ff8fab' : colour
     // SPEC §10.1: staggered entry, so balloons do not arrive as one flat wall.
     el.style.animationDelay = `${index * CELEBRATION.balloonStaggerMs}ms`
-    // Spread across the party size, so a small set does not look like a broken row of twelve.
-    const span = 100 / (partySize() + 1)
-    el.style.left = `${span * (index + 1)}%`
+    // Issue #25: the bunch spreads wider than the board (`left: -8%..108%`), so twelve balloons of this
+    // size overlap and the outermost hang off the edge. A single balloon sits centred.
+    el.style.left = `${size <= 1 ? 50 : spreadLeft(index, size)}%`
+    // Heights follow a gentle arc across the row - outermost lowest, the middle highest - with a
+    // ±5% jitter of the band, so it reads as a bunch rather than a row or a random clump.
+    const arc = Math.sin((Math.PI * (index + 0.5)) / size)
+    const band = LAYOUT.balloonBandBottomMin + (LAYOUT.balloonBandBottomMax - LAYOUT.balloonBandBottomMin) * arc
+    // The jitter stays inside the band: the resting places are 50%-78%, never above the top edge and
+    // never low enough for the arrow's row.
+    const bottom = Math.max(LAYOUT.balloonBandBottomMin, Math.min(LAYOUT.balloonBandBottomMax, band + bandJitter()))
+    el.style.bottom = `${bottom}%`
+    // Each balloon's own size is jittered from the injected Rng, so a session still replays (SPEC §2).
+    // The stylesheet multiplies this by the inherited `--balloon-px`, so a rotation re-sizes the
+    // balloon without the module having to touch it again.
+    el.style.setProperty('--balloon-jitter', String(1 + (rng.next() * 2 - 1) * LAYOUT.balloonSizeJitter))
+
+    // Issue #26: the float never stops, including after the arrow appears. The phase and the direction
+    // come from the injected Rng, so no two balloons move in lockstep; a negative delay starts the
+    // animation mid-cycle rather than waiting for it.
+    const period = CELEBRATION.balloonFloatMsMin + rng.next() * (CELEBRATION.balloonFloatMsMax - CELEBRATION.balloonFloatMsMin)
+    float.style.animationDuration = `${period / 1000}s`
+    float.style.animationDelay = `${(-rng.next() * period) / 1000}s`
+    float.style.animationDirection = rng.next() < 0.5 ? 'reverse' : 'normal'
+
     root.appendChild(el)
 
     const balloon: Balloon = { el, popped: false, chimeIndex: index }
@@ -304,28 +410,41 @@ export function createCelebration(
     // The first drawn frame has no previous frame to integrate from, even if the last party ran minutes
     // ago, so the burst does not jump by the gap between parties.
     drawnAt = 0
+    // Issue #28: read the party size once, at the moment the party starts, and derive the arrow's delay
+    // from it. A respawn can change the count, so the count the delay was built from is this one.
+    const size = partySize()
+    const playDelay = playButtonDelayMsFor(size)
+    // The inline value wins over the stylesheet's `--play-button-delay` fallback, and `reveal` below uses
+    // the same number, so the fade-in and the tap-ability cannot drift apart.
+    play.style.setProperty('--play-button-delay', `${playDelay}ms`)
 
     if (!reducedMotion) {
       draw()
-      // SPEC §10.1 phase 1: fireworks begin immediately, over the board. Waiting for the first balloon
-      // pop or the ambient timer meant the "party" opened on a dimmed, still board.
+      // SPEC §10.1 phase 1 (issue #27): the party opens with a three-burst volley across the board, at
+      // 0/180/460ms. Waiting for the first balloon pop or the ambient timer meant the "party" opened on
+      // a dimmed, still board.
       const width = canvas.width / dpr
       const height = canvas.height / dpr
-      spawnBurst(width * 0.5, height * 0.45)
+      spawnBurst(width * 0.5, height * 0.42)
       later(180, () => {
         if (!running) return
-        spawnBurst(width * 0.32, height * 0.55)
+        spawnBurst(width * 0.27, height * 0.55)
+      })
+      later(460, () => {
+        if (!running) return
+        spawnBurst(width * 0.73, height * 0.5)
       })
     }
 
-    for (let i = 0; i < partySize(); i++) spawnBalloon(i)
+    for (let i = 0; i < size; i++) spawnBalloon(i)
 
     // SPEC §10.1 phase 1: the completion cue is the existing fanfare, sized by the party.
     audio.playCompletion(opts.tier())
 
-    // SPEC §10.1: the play button appears after the fanfare, not at the same time. The ready class is
-    // what makes it visible and tappable at the same moment (issue #13), and reduced motion shows it at
-    // once, because "after a beat" is a travel and travels are what reduced motion removes (SPEC §13).
+    // SPEC §10.1 (issue #28): the play arrow appears once the last balloon has settled, not after a
+    // fixed 1500ms that would land in the middle of a 2.5s climb. The ready class is what makes it
+    // visible and tappable at the same moment (issue #13), and reduced motion shows it at once, because
+    // "after a beat" is a travel and travels are what reduced motion removes (SPEC §13).
     const reveal = (): void => {
       if (!running) return
       play.classList.add('next--ready')
@@ -336,7 +455,7 @@ export function createCelebration(
     if (reducedMotion) {
       reveal()
     } else {
-      later(CELEBRATION.playButtonDelayMs, reveal)
+      later(playDelay, reveal)
     }
   }
 

@@ -15,8 +15,13 @@
   --cols: 6;
   --rows: 6;
 
-  /* Mirror of CELEBRATION.playButtonDelayMs in game/constants.ts. CSS cannot read a constant, so
-     this is the one place the number is written twice - the literal is the fallback. */
+  /* The party balloons (issue #25): ui/layout.ts writes the size from the measured board area, and
+     ui/celebration.ts writes a per-balloon jitter inline. These are the plain fallbacks. */
+  --balloon-px: 80px;
+  --balloon-jitter: 1;
+
+  /* The Chrome 61/no-JS fallback for the play arrow (issue #28). The shipped delay is derived per party
+     from CELEBRATION.balloonRiseMs and balloonStaggerMs and written inline by ui/celebration.ts. */
   --play-button-delay: 1500ms;
 
   font-family: ui-rounded, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
@@ -330,36 +335,51 @@ body {
   align-items: center;
 }
 
-/* SPEC §10.1 phase 2: balloons rise from the bottom. They rest above the play arrow (the row the
-   celebration layer lays out at the bottom-centre), and the keyframes carry them up from below the
-   edge, so the entrance reads as a rise rather than a fade. The layer places them with `left: N%`,
-   so they are positioned rather than flowed. */
+/* SPEC §10.1 phase 2 (issue #25): the balloons are the payoff, so they are sized from
+   `--balloon-px` (written by ui/layout.ts from the measured board area) rather than a fingertip-sized
+   44px. The plain values are the Chrome 61 fallback; `clamp()` is newer than the engine, so the floor
+   lives in the module. `--balloon-jitter` is the per-balloon ±6% the module draws from the injected Rng.
+   The layer places them with `left`/`bottom`, so they are positioned rather than flowed.
+
+   Issue #26: the rise is an animation on the button, so the hit box travels with the balloon and a
+   moving balloon can be tapped. `backwards`, not `both`: the fill only has to hide the balloon until
+   its stagger arrives, and a forwards fill would beat the shape's pop transform. */
 .balloon {
   position: absolute;
-  bottom: 26%;
-  width: 44px;
-  height: 52px;
-  margin: 0 6px;
+  bottom: 50%;
+  width: 80px;
+  height: 94px;
+  width: calc(var(--balloon-px, 80px) * var(--balloon-jitter, 1));
+  height: calc(var(--balloon-px, 80px) * 1.18 * var(--balloon-jitter, 1));
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
   touch-action: manipulation;
-  /* SPEC §10.1: they rise one after another, so the scene does not arrive as one flat wall. The
-     stagger is the inline `animation-delay` the module sets from CELEBRATION.balloonStaggerMs,
-     which is why the rise is an animation. `backwards`, not `both`: the fill only has to hide the
-     balloon until its stagger arrives. With `both` the final keyframe kept winning the cascade after
-     the animation ended, so `.balloon--popped`'s transform never computed and a tapped balloon did
-     not pop at all - only the canvas sparkle happened (SPEC §3, one tap one visible consequence). */
-  animation: balloon-rise 600ms ease-out backwards;
+  animation: balloon-rise 1200ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+
+/* One transform owner per element (issue #25): the button owns the rise, this span owns the endless
+   sway/bob, and `.balloon__shape` owns the 260ms pop. Chrome 61 has no individual transform
+   properties, so the sway and the bob share one keyframe set: one sway cycle, two bob cycles. */
+.balloon__float {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: balloon-float 6.5s ease-in-out infinite;
 }
 
 /* The pop is a transition, not a second animation, because the inline delay the module sets for the
-   stagger would otherwise delay the pop as well. A tapped balloon pops at once. This only works
-   because the rise no longer fills forwards; see the `backwards` note above. */
-.balloon--popped {
-  transform: scale(0.55);
+   stagger would otherwise delay the pop as well. A tapped balloon pops at once. */
+.balloon__shape {
+  display: block;
+  width: 100%;
+  height: 100%;
   transition: transform 260ms ease-out;
+}
+
+.balloon--popped .balloon__shape {
+  transform: scale(0.55);
 }
 
 .balloon__svg {
@@ -379,7 +399,9 @@ body {
 @keyframes balloon-rise {
   from {
     opacity: 0;
-    transform: translateY(280%) scale(0.7);
+    /* 600% of the balloon's own height, which is enough to start below the board edge from the top of
+       the 50%-78% resting band. */
+    transform: translateY(600%) scale(0.7);
   }
   to {
     opacity: 1;
@@ -387,11 +409,45 @@ body {
   }
 }
 
-/* The play arrow, SPEC §10.1 (issue #13): it appears after the fanfare has run, not at the same time, and
+/* Issue #26: ±7px sway over one cycle and ±8px bob over two, so the two periods are 6-7s and 3-3.5s
+   and the path never resolves into a circle. The module sets the duration, phase and direction per
+   balloon from the injected Rng. */
+@keyframes balloon-float {
+  0% {
+    transform: translate(0, 0);
+  }
+  12.5% {
+    transform: translate(4.95px, 8px);
+  }
+  25% {
+    transform: translate(7px, 0);
+  }
+  37.5% {
+    transform: translate(4.95px, -8px);
+  }
+  50% {
+    transform: translate(0, 0);
+  }
+  62.5% {
+    transform: translate(-4.95px, 8px);
+  }
+  75% {
+    transform: translate(-7px, 0);
+  }
+  87.5% {
+    transform: translate(-4.95px, -8px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+/* The play arrow, SPEC §10.1 (issue #13): it appears once the last balloon has settled (issue #28), and
    the pulse is an adult-visible affordance, so reduced motion keeps the arrow still. The delay is the
-   custom property at the top of this file, mirroring CELEBRATION.playButtonDelayMs; the literal is the
-   Chrome 61 fallback. The arrow is in the DOM from the moment the party starts, and `next--ready` is the
-   step that both shows it and lets it be hit, so it is tappable the instant it is visible. */
+   custom property the module writes inline per party from the rise and the stagger; the literal 1500ms
+   is only the Chrome 61/no-JS fallback, mirroring CELEBRATION.playButtonDelayMs. The arrow is in the DOM
+   from the moment the party starts, and `next--ready` is the step that both shows it and lets it be hit,
+   so it is tappable the instant it is visible. */
 .next {
   position: relative;
   width: 90px;
@@ -798,7 +854,7 @@ body {
   .next,
   .next--pulsing,
   .next--ready,
-  .balloon svg {
+  .balloon__float {
     animation: none;
   }
 
@@ -810,7 +866,8 @@ body {
     animation: none;
   }
 
-  .balloon--popped {
+  .balloon__shape,
+  .balloon--popped .balloon__shape {
     transition: none;
   }
 

@@ -6,9 +6,11 @@ The design spec is [`docs/SPEC.md`](docs/SPEC.md).
 **Status: M2/M3 — goals, the level ramp, the party and the wiring are in.** M1 (board,
 tap-to-pop, gravity, refill, dead-board reshuffle, synthesised sound) is joined by goals and
 the bubble meter, the celebration with balloons and the play arrow, save/resume, mute, the adult
-long-press reset, the debug overlay, and the portrait and reduced-motion rules. The ramp is locked
-to `npm run sim` output (issue #22). What is left is the device checklist, the unsupervised
-five-minute session and the v1 tag (issues #20 and #22).
+long-press reset, the debug overlay, and the portrait and reduced-motion rules. The celebration was
+rebuilt in issue #24's four slices: bigger balloons hung as a bunch, a slow climb into an endless
+float, coloured fireworks with a three-burst opening, and a play arrow that waits for the last
+balloon. The ramp is locked to `npm run sim` output (issue #22). What is left is the device
+checklist, the unsupervised five-minute session and the v1 tag (issues #20 and #22).
 
 ## Commands
 
@@ -48,8 +50,10 @@ at least one group of three.
 
 Each level has two goal animals with a target each, and a rack of bubbles: one bubble leaves the
 rack per pop, never below 1, and an invalid tap is free. When both goals reach zero the party is
-sized by what is left on the rack — fewer taps, bigger party — capped at 12 balloons. The play
-arrow appears after the fanfare has run and advances the level.
+sized by what is left on the rack — fewer taps, bigger party — capped at 12 balloons. The balloons
+are roughly twice a fingertip, climb for 1.2s each, then sway and bob in the upper half of the board
+for as long as the party lasts; the play arrow appears once the last one settles and advances the
+level.
 
 Every sound is synthesised with the Web Audio API; there are no audio files. Audio unlocks on the
 first tap, as Android requires.

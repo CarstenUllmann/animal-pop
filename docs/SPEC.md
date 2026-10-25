@@ -277,10 +277,10 @@ board; the board itself dims and stops accepting taps (except balloon taps).
 | Phase | Timing | Content |
 |-------|--------|---------|
 | 0 | 0ms | Pop burst on the final goal, ring snaps full |
-| 1 | 0–500ms | Fireworks begin behind/above the board, tier from §8.4 |
-| 2 | 200ms+ | Balloons drift up from the bottom, one at a time (~120ms apart) |
-| 3 | 1500ms | Big pulsing ▶ button fades in, bottom-centre |
-| 4 | until she taps ▶ | Everything keeps running (slow ambient fireworks, balloons respawn if all popped) |
+| 1 | 0–460ms | Fireworks begin behind/above the board, tier from §8.4. The party opens with a three-burst volley at 0/180/460ms |
+| 2 | 0–2.5s | Balloons climb from below the board edge, one at a time, 1200ms each with a decelerating ease and a 120ms stagger, then settle into a swaying, overlapping bunch in the upper half of the board. The first lands at ~1.2s, the twelfth at ~2.5s; the float never stops |
+| 3 | after the last balloon lands: `1200 + (n−1) × 120` ms (2.52s at twelve balloons, 1.44s at three) | Big pulsing ▶ button fades in, bottom-centre, already clear of the balloons |
+| 4 | until she taps ▶ | Everything keeps running (slow ambient fireworks every ~1s, balloons respawn if all popped) |
 
 - Balloon tap → pop + sparkle burst + pop sound (pitch from a pentatonic set). Satisfying.
 - Balloons are **optional**: ▶ is tappable from the moment it appears.
@@ -288,10 +288,37 @@ board; the board itself dims and stops accepting taps (except balloon taps).
 - If `fireworkTier === "small"` (careless play) the fanfare is replaced by a soft two-note
   "aww" chime and only a few balloons appear. Quieter, **not** sad — there is no fail.
 
+**The bunch (issues #25, #26).** A balloon is `min(boardW × 0.13, boardH × 0.15)` CSS px, floored
+at 86px so even a −6% jittered balloon clears the 80px tap target, and jittered ±6% per balloon:
+90px on the target tablet, about twice the 44px it used to be.
+The size is written by `ui/layout.ts` as `--balloon-px`, not as a fixed pixel value. The resting
+band is `bottom: 50%–78%` on a gentle arc (outermost lowest, middle highest, ±5% jitter), spread
+`left: −8%…108%` so twelve balloons of this size overlap and the outermost hang off the edge. Each
+balloon is three elements — `.balloon` (button, owns the rise so the hit box travels with it) →
+`.balloon__float` (owns the endless ±7px sway over 6–7s and ±8px bob over 3–3.5s) →
+`.balloon__shape` (owns the 260ms pop) — one transform owner each, which is what lets a balloon
+tapped mid-rise pop exactly like one at rest. Period, phase and direction come from the injected
+`Rng`, so the bunch never moves in lockstep and a session still replays.
+
+**The arrow (issue #28).** The ▶ waits for the last balloon to settle rather than a fixed beat: the
+delay is computed per party when the party starts and written inline as `--play-button-delay`, with
+`CELEBRATION.playButtonDelayMs` only as the stylesheet fallback. It is in the DOM from the start,
+`next--ready` reveals and enables it in one step, and it sits bottom-centre where the upper-half
+balloons can never cover it.
+
 ### 10.2 Performance
 
 Fireworks: max 120 particles per burst, pooled, DPR capped at 2. Must hold 60fps on the
 target device; degrade particle count (`30fps` tier) if frame time exceeds budget for 1s.
+
+The burst reads as a firework, not a handful of yellow arcs (issue #27). A seven-hue palette
+(`FIREWORK_COLORS`) covers it; each burst draws a 2–3 hue subset, and every particle takes its hue
+at **spawn** from the injected `Rng` — never per frame, because that would break replay determinism
+and spend main-thread time. About one particle in five is near-white, so a burst sparkles instead
+of reading as confetti. Radius is jittered 2–5px, a white-hot core shows for the first ~20% of a
+particle's life, and the radius shrinks as it dies. No motion trails. The atmosphere burst runs
+every 60 frames (~1s), and the opening volley is three bursts; worst case is 360 live particles
+against the unchanged 500-particle pool, so nothing allocates.
 
 "Frame time" is the interval the browser actually delivers between animation frames, not the time the
 celebration spends drawing: on the tablet the compositor and the rest of the page are what make a frame
@@ -406,8 +433,12 @@ device" gate — she plays however she's holding it).
 - Portrait fallback: panel stacks above the board, goals side by side, bubble rack becomes a
   horizontal band across the panel width (ADR-0001: the rack sized for 35 wraps to 3 rows at the
   target density, inside the panel row it has). Board stays square and centred.
+- Party balloons are sized from the board area (`min(boardW × 0.13, boardH × 0.15)`, base floor
+  86px so a −6% jittered balloon still clears the 80px tap target, ~90px on the target tablet) and a
+  rotation recomputes that size like every other metric (§10.1, issue #25).
 - `prefers-reduced-motion: reduce` → shorter, non-scaling animations; nothing becomes
-  unreadable.
+  unreadable. The balloons are bigger but already in their resting places, with no rise and no
+  float; the particle canvas is not shown at all.
 
 ---
 

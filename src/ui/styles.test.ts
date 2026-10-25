@@ -35,6 +35,39 @@ function mediaBlock(): string {
 }
 
 /**
+ * The `@keyframes` block a name refers to, so a test can read the travel it describes rather than
+ * matching one hand-written line.
+ */
+function keyframesBlock(name: string): string {
+  const start = css.indexOf(`@keyframes ${name}`)
+  if (start === -1) return ''
+  let depth = 0
+  for (let i = css.indexOf('{', start); i < css.length; i++) {
+    if (css[i] === '{') depth++
+    else if (css[i] === '}') {
+      depth -= 1
+      if (depth === 0) return css.slice(start, i + 1)
+    }
+  }
+  return ''
+}
+
+/** The furthest each axis travels in a `translate(x, y)` keyframe set, in CSS px. */
+function ceilingsForKeyframe(name: string): { x: number; y: number } {
+  const block = keyframesBlock(name)
+  const pattern = /translate\((-?[\d.]+)(?:px)?,\s*(-?[\d.]+)(?:px)?\)/g
+  let x = 0
+  let y = 0
+  let match = pattern.exec(block)
+  while (match !== null) {
+    x = Math.max(x, Math.abs(parseFloat(match[1] ?? '0')))
+    y = Math.max(y, Math.abs(parseFloat(match[2] ?? '0')))
+    match = pattern.exec(block)
+  }
+  return { x, y }
+}
+
+/**
  * Issue #10: `html,` and `body` are written on two lines, so that rule has to be matched with its selector
  * normalised. Every other selector here is on one line, which is why `rule()` above can look for it as it is.
  */
@@ -84,35 +117,68 @@ describe('celebration stylesheet', () => {
   it('rises the balloons with an animation, so the stagger the module sets can apply', () => {
     const balloon = rule('.balloon')
     expect(balloon).toContain('animation: balloon-rise')
-    // The pop is a transition, so the inline `animation-delay` from CELEBRATION.balloonStaggerMs
-    // staggers the entry without delaying a tap.
-    expect(rule('.balloon--popped')).toContain('transition')
-    expect(rule('.balloon--popped')).not.toContain('animation')
+    // The pop is a transition on the shape, so the inline `animation-delay` from
+    // CELEBRATION.balloonStaggerMs staggers the entry without delaying a tap (issue #25).
+    expect(rule('.balloon__shape')).toContain('transition')
+    expect(rule('.balloon--popped .balloon__shape')).toContain('transform: scale(')
+    expect(rule('.balloon--popped .balloon__shape')).not.toContain('animation')
   })
 
   it('lets the rise stop filling forward, or a tapped balloon cannot pop (SPEC §10.1)', () => {
     // `both`/`forwards` keeps the final keyframe - `transform: translateY(0) scale(1)` - applying after
-    // the rise ends, and animation values beat the `.balloon--popped` declaration, so the transition had
-    // nothing to animate. `backwards` still hides a balloon until its stagger arrives.
-    expect(rule('.balloon')).toContain('animation: balloon-rise 600ms ease-out backwards')
-    expect(rule('.balloon')).not.toContain('animation: balloon-rise 600ms ease-out both')
-    expect(rule('.balloon--popped')).toContain('transform: scale(')
+    // the rise ends, and animation values beat a transition, so the pop had nothing to animate.
+    // `backwards` still hides a balloon until its stagger arrives.
+    expect(rule('.balloon')).toContain(`animation: balloon-rise ${CELEBRATION.balloonRiseMs}ms ${CELEBRATION.balloonRiseEase} backwards`)
+    expect(rule('.balloon')).not.toContain('both')
+    // Issue #26: one transform owner per element. The shape owns the pop, so no animation may claim
+    // its transform; the float owns the endless sway/bob instead.
+    expect(rule('.balloon__shape')).not.toContain('animation')
+    expect(rule('.balloon__float')).toContain('animation: balloon-float')
+    expect(rule('.balloon__float')).not.toContain('transition')
   })
 
-  it('holds the play button until the fanfare has run, at the constant it mirrors', () => {
+  it('holds the play button fallback at the constant, while the module writes the per-party delay', () => {
+    // Issue #28: `--play-button-delay` is written inline from the rise and the stagger. The root value
+    // is only the no-JS/Chrome 61 fallback, so the stylesheet pins this and not the shipped number.
     expect(css).toContain(`--play-button-delay: ${CELEBRATION.playButtonDelayMs}ms`)
     expect(rule('.next')).toContain('animation-delay')
+    expect(rule('.next')).toContain('var(--play-button-delay)')
   })
 
-  it('places the play arrow bottom-centre and rises the balloons from below it (SPEC §10.1)', () => {
+  it('hangs the balloons as a bunch in the upper half, wide enough to overlap (issues #25, #28)', () => {
     // The party is an overlay over the board, so its composition has to leave the balloons reachable and
     // the way out of the level unmistakable: the arrow owns the bottom-centre, the balloons rest above it.
     expect(rule('.celebration')).toContain('justify-content: flex-end')
     expect(rule('.celebration')).toContain('padding-bottom: 4%')
-    expect(rule('.balloon')).toContain('bottom: 26%')
-    expect(rule('.balloon')).not.toContain('top: 30%')
-    // The rise has to travel from below the resting row, not just fade in where it lands.
-    expect(css).toContain('transform: translateY(280%) scale(0.7)')
+    expect(rule('.balloon')).toContain(`bottom: ${LAYOUT.balloonBandBottomMin}%`)
+    expect(rule('.balloon')).not.toContain('bottom: 26%')
+    // The module writes the arc, jitter and spread inline; the band is the resting fallback.
+    expect(LAYOUT.balloonBandBottomMax).toBeLessThanOrEqual(80)
+    expect(LAYOUT.balloonSpreadStart).toBeLessThan(0)
+    expect(LAYOUT.balloonSpreadEnd).toBeGreaterThan(100)
+    // The rise has to travel from below the resting band, not just fade in where it lands.
+    expect(css).toContain('transform: translateY(600%) scale(0.7)')
+  })
+
+  it('sizes the balloons from the custom property, with a plain-px fallback and no clamp (issues #25, §6)', () => {
+    const balloon = rule('.balloon')
+    expect(balloon).toContain(`width: ${LAYOUT.balloonPxMin}px`)
+    expect(balloon).toContain(`var(--balloon-px, ${LAYOUT.balloonPxMin}px)`)
+    expect(balloon).toContain('var(--balloon-jitter')
+    // `clamp()` is Chrome 79 and the engine baseline is 61, so the floor lives in the layout module.
+    expect(balloon).not.toContain('clamp(')
+  })
+
+  it('gives each transform one owner, so a balloon tapped mid-rise still pops (issue #26)', () => {
+    // The button owns the rise, the float span owns the endless sway/bob, the shape span owns the pop.
+    // Two animations on one element would make the later one win and the pop go silent.
+    expect(rule('.balloon')).toContain('animation: balloon-rise')
+    expect(rule('.balloon__float')).toContain('animation: balloon-float')
+    expect(rule('.balloon__shape')).toContain('transition: transform')
+    expect(rule('.balloon--popped .balloon__shape')).toContain('transform: scale(')
+    expect(rule('.balloon--popped')).toBe('')
+    // The float keyframes carry both axes at ±7 and ±8 CSS px.
+    expect(ceilingsForKeyframe('balloon-float')).toEqual({ x: CELEBRATION.balloonSwayPx, y: CELEBRATION.balloonBobPx })
   })
 
   it('dim reads as a scrim on the overlay itself, not as a class on the board', () => {
@@ -134,6 +200,9 @@ describe('celebration stylesheet', () => {
     const media = mediaBlock()
     expect(media).toContain('.balloon')
     expect(media).toContain('animation: none')
+    // Issue #26: no rise, no float, and the pop is one frame rather than a travel.
+    expect(media).toContain('.balloon__float')
+    expect(media).toContain('.balloon__shape')
     expect(media).toContain('.particle-layer')
     expect(media).toContain('visibility: hidden')
     // Issue #19: pops, bubbles, rings and completion still read. The ring selector has to be the one

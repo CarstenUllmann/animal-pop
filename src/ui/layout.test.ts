@@ -41,6 +41,27 @@ describe('layout on the target tablet (SPEC §13)', () => {
     expect(metrics.levelPx).toBeGreaterThanOrEqual(metrics.goalPx)
   })
 
+  it('sizes the party balloon from the measured board area, never below 80px (issue #25)', () => {
+    const landscape = computeLayout(TABLET, GRID)
+    // min(board area 717 x 0.13, board area 600 x 0.15) = 90 CSS px, about twice the old 44px and
+    // comfortably past the 80px floor. The grilling's "~112px" assumed a larger board box than the
+    // target tablet has; the formula is the contract, and 90 is what 1024x600 produces.
+    expect(landscape.balloonPx).toBe(90)
+    expect(landscape.balloonPx).toBeGreaterThanOrEqual(LAYOUT.balloonPxMin)
+    expect(landscape.balloonPx).toBeGreaterThan(44 * 1.5)
+    // The smallest balloon the ±6% jitter can produce still clears the 80px tap target.
+    expect(landscape.balloonPx * (1 - LAYOUT.balloonSizeJitter)).toBeGreaterThanOrEqual(LAYOUT.balloonPxMin)
+
+    // The floor is what keeps the balloon a legal tap target on a small window: 80px after the -6%
+    // jitter, so the base is 86px. In portrait the board area is narrower, so the floor takes over.
+    expect(computeLayout({ width: 480, height: 320 }, GRID).balloonPx).toBe(86)
+    expect(computeLayout({ width: 600, height: 1024 }, GRID).balloonPx).toBe(86)
+
+    // A bigger board gets a bigger balloon: the size is derived, not fixed.
+    const desktop = computeLayout({ width: 1920, height: 1080 }, GRID)
+    expect(desktop.balloonPx).toBeGreaterThan(landscape.balloonPx)
+  })
+
   it('the whole rack fits the panel without scrolling, at the measured plateau size of 35 (issue #8)', () => {
     const metrics = computeLayout(TABLET, GRID)
     // SPEC §8.2: 22-26 CSS px bubbles and 3-4 per row. The rows are the wrap, so the panel has to hold the

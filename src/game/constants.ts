@@ -181,6 +181,22 @@ export const LAYOUT = {
   },
   /** Nothing interactive is smaller than this (SPEC §13): the mute target and the numeral's box. */
   interactiveMinPx: 64,
+  /**
+   * The party balloons (SPEC §10.1, issue #25). The size comes from the measured board area rather
+   * than a fixed pixel value, so it survives the target device's aspect ratio and a rotation; the
+   * floor keeps §13's 64 px tap target clear even on a small window.
+   */
+  balloonWidthFactor: 0.13,
+  balloonHeightFactor: 0.15,
+  balloonPxMin: 80,
+  /** Each balloon's own size is jittered by this fraction, so the bunch never looks tiled. */
+  balloonSizeJitter: 0.06,
+  /** The resting band, in `bottom` percent of the board area: high in the upper half. */
+  balloonBandBottomMin: 50,
+  balloonBandBottomMax: 78,
+  /** The spread, in `left` percent: wider than the board, so the bunch overlaps and the outer ones hang off. */
+  balloonSpreadStart: -8,
+  balloonSpreadEnd: 108,
   /** Device pixel ratio cap (SPEC §5). */
   dprMax: 2,
 } as const
@@ -190,6 +206,12 @@ export const FONTS = {
   levelPx: 44,
   goalPx: 32,
 } as const
+
+/**
+ * The seven hues a firework burst draws from (SPEC §10.2, issue #27). Each burst takes a 2-3 hue
+ * subset, and each particle takes its hue at spawn so a session still replays (SPEC §2).
+ */
+export const FIREWORK_COLORS = ['#ff5c8a', '#ffd166', '#4ce3c0', '#7bdff2', '#b388ff', '#ff8f4d', '#fff3b0'] as const
 
 /**
  * Fireworks (SPEC §10.2). The burst cap is a hard one: the pool in `ui/pool.ts` hands out at
@@ -210,10 +232,22 @@ export const PARTICLES = {
   speedPxPerSecond: 192,
   gravityPxPerSecond: 180,
   lifeSeconds: 1.05,
-  /** The radius the burst is drawn at, in CSS px. */
-  particleSize: 3,
+  /**
+   * The radius a particle is drawn at, in CSS px, jittered at spawn (issue #27). It shrinks as the
+   * particle dies, so the burst dissolves instead of blinking out.
+   */
+  radiusMin: 2,
+  radiusMax: 5,
+  /** About one particle in five is near-white, so a burst sparkles instead of reading as confetti. */
+  whiteShare: 0.2,
+  whiteColor: '#fffaf0',
+  /** How many palette hues one burst draws from (issue #27): 2-3, never the whole palette. */
+  burstHuesMin: 2,
+  burstHuesMax: 3,
+  /** The white-hot core shows for the first fifth of a particle's life. */
+  hotCoreLifeFraction: 0.2,
   /** One ambient burst every this many frames once the party is idle (SPEC §10.1 phase 4). */
-  ambientFrames: 90,
+  ambientFrames: 60,
   /** 60fps budget; over it for `degradeAfterMs` drops the celebration to 30fps. */
   frameBudgetMs: 16.7,
   /**
@@ -237,13 +271,43 @@ export const PARTICLES = {
   recoverAfterMs: 3000,
 } as const
 
-/** Celebration timings, in ms (SPEC §10.1): balloons one at a time, ▶ after a beat. */
+/** Celebration timings, in ms (SPEC §10.1): balloons one at a time, ▶ after the last one lands. */
 export const CELEBRATION = {
+  /**
+   * The slow, decelerating climb (issue #26). It runs from below the board edge to the resting band
+   * for every tier, so a muted session and the fanfare share one timing without depending on audio.
+   */
+  balloonRiseMs: 1200,
+  balloonRiseEase: 'cubic-bezier(0.22, 0.61, 0.36, 1)',
   balloonStaggerMs: 120,
+  /**
+   * How long a balloon takes to complete one sway (issue #26). The bob runs at twice this rate, so
+   * the two never resolve into a circle. Chrome 61 cannot animate two transforms independently on
+   * one element, so the module writes one duration and the keyframes carry both axes.
+   */
+  balloonFloatMsMin: 6000,
+  balloonFloatMsMax: 7000,
+  /** The float amplitudes in CSS px: enough to breathe, not enough to move the target (issue #26). */
+  balloonSwayPx: 7,
+  balloonBobPx: 8,
+  /**
+   * The stylesheet fallback for the play-arrow delay (issue #28). The shipped delay is derived per
+   * party from the rise and the stagger and written inline; this constant only keeps the no-JS and
+   * test path unchanged.
+   */
   playButtonDelayMs: 1500,
   /** Rings the pentatonic pitches a balloon pop is drawn from (SPEC §11). */
   balloonPitchHz: 1046.5,
 } as const
+
+/**
+ * Issue #28: the ▶ waits for the last balloon to settle, not for a fixed beat. Twelve balloons land
+ * at 2.52s and three at 1.44s, so a small party does not stare at a still screen for a second it
+ * does not need. The head start is the first balloon's rise; each later one adds a stagger.
+ */
+export function playButtonDelayMsFor(partySize: number): number {
+  return CELEBRATION.balloonRiseMs + Math.max(0, partySize - 1) * CELEBRATION.balloonStaggerMs
+}
 
 /**
  * Adult long-press reset (SPEC §14.2): three seconds on the level numeral opens the confirm

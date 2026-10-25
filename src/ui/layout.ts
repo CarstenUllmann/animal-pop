@@ -31,6 +31,8 @@ export interface LayoutMetrics {
   rackColumns: number
   /** The play arrow, which is a tap target (SPEC §10.1, §13). */
   playPx: number
+  /** The party balloon size, from the measured board area, floored so every jittered balloon clears 80px (SPEC §10.1, issue #25). */
+  balloonPx: number
   /** The box reserved for every interactive element no larger than this (SPEC §13). */
   interactivePx: number
   /** Portrait layout: the panel stacks above the board. */
@@ -122,6 +124,15 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   const rackRows = Math.ceil(rackBubbles / rackColumns)
   const rackRowsFit = Math.max(0, Math.floor((panelContentPx - panelChromePx - 2 * LAYOUT.chrome.rackPaddingPx) / rackRowPx))
   const boardPx = cell * Math.max(grid.rows, grid.cols)
+  // Issue #25: the balloon is the payoff, so it is sized from the board area it hangs over rather than
+  // from a fixed 44px. The floor is the 80px tap target *after* the per-balloon -6% jitter has been
+  // applied, so no balloon in the bunch can fall under 80px; on the target tablet the factors give 90px
+  // (min(717 x 0.13, 600 x 0.15)), about twice the old size.
+  const balloonFloorPx = Math.ceil(LAYOUT.balloonPxMin / (1 - LAYOUT.balloonSizeJitter))
+  const balloonPx = Math.max(
+    balloonFloorPx,
+    Math.round(Math.min(boardAreaWidthPx * LAYOUT.balloonWidthFactor, boardAreaHeightPx * LAYOUT.balloonHeightFactor)),
+  )
 
   return {
     panelWidthFraction,
@@ -133,6 +144,7 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     bubblePx,
     rackColumns,
     playPx: between(Math.round(cell * 0.90), LAYOUT.tapTargetCssPx, LAYOUT.cellMaxPx),
+    balloonPx,
     interactivePx: LAYOUT.interactiveMinPx,
     portrait,
     tapTargetTooSmall: cell < LAYOUT.tapTargetCssPx,
@@ -175,6 +187,7 @@ export function applyLayout(root: HTMLElement, viewport: Viewport, grid: GridSiz
   root.style.setProperty('--bubble-px', `${metrics.bubblePx}px`)
   root.style.setProperty('--rack-columns', String(metrics.rackColumns))
   root.style.setProperty('--play-px', `${metrics.playPx}px`)
+  root.style.setProperty('--balloon-px', `${metrics.balloonPx}px`)
   root.style.setProperty('--tap-min-px', `${metrics.interactivePx}px`)
 
   return metrics
