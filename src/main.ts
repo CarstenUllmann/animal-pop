@@ -110,8 +110,22 @@ function start(root: HTMLElement): void {
   const player = createSynthPlayer()
   let lastSave = saved
 
-  const mute = createMuteController({ player, store, currentSave: () => lastSave })
+  const mute = createMuteController({
+    player,
+    store,
+    currentSave: () => lastSave,
+    // Issue #17: the game persists the toggle on the next save, so the save context and the last save
+    // have to move with the switch. Without this, the next tap wrote the muted state the game booted
+    // with and quietly turned the sound back on after a reload.
+    onChange: (muted: boolean) => {
+      context.muted = muted
+      if (lastSave !== null) lastSave = Object.assign({}, lastSave, { muted: muted })
+    },
+  })
   context.muted = mute.muted()
+  // A save exists from the first frame, not just after the first tap: otherwise a mute chosen before
+  // she plays has nothing to merge into and is forgotten on reload (issue #17).
+  lastSave = toSaveState(state, context)
   mountMuteToggle(panel.element, mute)
   log.step('mute')
 
@@ -129,7 +143,7 @@ function start(root: HTMLElement): void {
       // Issue #16: a reset is only a reset once it is written, otherwise the next force-close brings the
       // wiped level straight back. Issue #11: the reset is a level change, so anything still queued goes
       // with it, and the board is dealt again rather than left as the wiped one was.
-      writeSave(state, context, store)
+      persistProgress()
       queue.clear()
       partyShown = false
       celebration.stop()
@@ -174,10 +188,17 @@ function start(root: HTMLElement): void {
   })
 
   // The overlay measures frames itself, because the game is the only thing that knows which frames
-  // it is spending (SPEC §10.2, issue #18). No overlay means no sampling loop.
+  // it is spending (SPEC §10.2, issue #18). No overlay means no sampling loop. The celebration rows are
+  // reported here too: they change while the party runs, so reporting them only on `showLevel` left the
+  // balloon, particle and tier rows showing the values from before the party started.
   if (debug !== null) {
-    const sample = (): void => {
-      debug.measureFps(performance.now())
+    let lastLive = 0
+    const sample = (now: number): void => {
+      debug.measureFps(now)
+      if (now - lastLive >= 250) {
+        lastLive = now
+        reportLive(debug, celebration)
+      }
       window.requestAnimationFrame(sample)
     }
     window.requestAnimationFrame(sample)
@@ -246,8 +267,7 @@ function start(root: HTMLElement): void {
       // tap sparkles in the same frame as the pop, and the screen cannot show a state the save has
       // already left behind.
       state = result.state
-      lastSave = toSaveState(state, context)
-      writeSave(state, context, store)
+      persistProgress()
       showLevel()
 
       if (result.group !== null) {
@@ -331,7 +351,7 @@ function start(root: HTMLElement): void {
     partyShown = true
     // Internal only, never shown to her (SPEC §14.1).
     context.levelsCompleted += 1
-    writeSave(state, context, store)
+    persistProgress()
     log.step(`party ${partySize(state).tier}`)
     party.hidden = false
     celebration.start()
@@ -345,13 +365,23 @@ function start(root: HTMLElement): void {
     // left, and the board they would have been decided against is not the one the new level was dealt.
     queue.clear()
     state = createLevel(state.level + 1, sessionSeed, pool)
-    lastSave = toSaveState(state, context)
-    writeSave(state, context, store)
+    persistProgress()
     log.step(`level ${state.level}`)
     void view
       .renderInitial(state.board)
       .then(showLevel)
       .catch((error: unknown) => log.error(describeError(error)))
+  }
+
+  /**
+   * The one write path for progress (SPEC §14.1). It reads mute from the player rather than from the
+   * context captured at boot, so toggling the sound and then playing a tap cannot write the old state
+   * back over the remembered one (issue #17).
+   */
+  function persistProgress(): void {
+    context.muted = mute.muted()
+    lastSave = toSaveState(state, context)
+    writeSave(state, context, store)
   }
 
   function drainQueue(): void {

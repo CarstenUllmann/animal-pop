@@ -254,6 +254,10 @@ export function createSynthPlayer(): AudioPlayer {
   function setMuted(next: boolean): void {
     muted = next
     if (master !== null) master.gain.value = muted ? 0 : AUDIO.masterGain
+    // Issue #17: mute is a cut, not a pause. Everything already scheduled would otherwise become
+    // audible again the moment she unmutes, which is a backlog of sounds she never heard being
+    // played late. `ready()` already refuses to start anything new while muted.
+    if (next) stop()
   }
 
   return {

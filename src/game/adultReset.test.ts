@@ -7,6 +7,7 @@ import {
   cancelReset,
   confirmHasExpired,
   confirmIsLive,
+  holdCompleted,
   holdOpensConfirm,
   initialAdultReset,
   openConfirm,
@@ -42,6 +43,15 @@ describe('adult reset', () => {
     // The child's taps are hundreds of times shorter than the adult hold.
     expect(holdOpensConfirm(120)).toBe(false)
     expect(initialAdultReset().stage).toBe('idle')
+  })
+
+  it('a released finger cannot open the confirm step when its old timer fires (issue #16)', () => {
+    // The timer is scheduled on pointerdown and fires three seconds later. Elapsed time alone would
+    // open the step for a normal tap; the finger has to still be down when it fires.
+    expect(holdCompleted(false, ADULT_RESET.holdMs)).toBe(false)
+    expect(holdCompleted(false, ADULT_RESET.holdMs + 5000)).toBe(false)
+    expect(holdCompleted(true, ADULT_RESET.holdMs)).toBe(true)
+    expect(holdCompleted(true, ADULT_RESET.holdMs - 1)).toBe(false)
   })
 
   it('any other interaction cancels it cleanly (issue #16)', () => {

@@ -34,6 +34,15 @@ export function holdOpensConfirm(heldMs: number): boolean {
   return heldMs >= ADULT_RESET.holdMs
 }
 
+/**
+ * The timer only opens the confirm step if the finger is still down when it fires (issue #16). The
+ * elapsed time alone is not enough: a normal tap also leaves a three-second timer behind it, and
+ * letting that timer open the step would make the adult-only path discoverable by accident.
+ */
+export function holdCompleted(pressed: boolean, heldMs: number): boolean {
+  return pressed && holdOpensConfirm(heldMs)
+}
+
 export function openConfirm(now: number): AdultResetState {
   return { stage: 'confirm', confirmExpiresAt: now + ADULT_RESET.confirmTimeoutMs }
 }

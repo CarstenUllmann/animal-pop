@@ -402,7 +402,10 @@ describe('next level button', () => {
     expect(mainSource).toContain('onNextLevel: nextLevel')
     const advance = functionBlock(mainSource, 'function nextLevel()')
     expect(advance).toContain('state.level + 1')
-    expect(advance).toContain('writeSave(')
+    // Every write goes through the one path that reads mute from the player, so a level transition
+    // cannot persist the mute state the game booted with (issue #17).
+    expect(advance).toContain('persistProgress()')
+    expect(functionBlock(mainSource, 'function persistProgress()')).toContain('writeSave(')
     // The report happens on the render's then, so the row is written from the state the save was written from.
     expect(advance).toContain('.then(showLevel)')
     expect(functionBlock(mainSource, 'function showLevel()')).toContain("debug.set('level'")

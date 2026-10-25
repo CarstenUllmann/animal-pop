@@ -24,6 +24,11 @@ export interface MuteDeps {
   currentSave: () => SaveState | null
   /** SPEC §11: what a device that has never been told otherwise gets. */
   persistedDefault?: boolean
+  /**
+   * Told when the switch moves, so the game's save context does not keep the state it booted with.
+   * Without this the next progress write would turn the sound back on (issue #17).
+   */
+  onChange?: (muted: boolean) => void
 }
 
 export interface MuteController {
@@ -49,6 +54,7 @@ export function createMuteController(deps: MuteDeps): MuteController {
       // Tell the player first. A running celebration is silenced by the same switch, and a
       // storage failure must never leave the icon disagreeing with what she can hear.
       deps.player.setMuted(next)
+      if (deps.onChange !== undefined) deps.onChange(next)
       persistMuted(deps.currentSave(), next, deps.store)
 
       return next

@@ -124,6 +124,39 @@ describe('mute', () => {
     expect(toggleMuted(true)).toBe(false)
   })
 
+  it('tells the game when it moves, so the next progress write keeps the choice (issue #17)', () => {
+    const state = createLevel(3, 0x33334444, POOL)
+    const order: string[] = []
+    const storage = fakeStore(order)
+    writeProgress(state, false, storage)
+    order.length = 0
+
+    const changes: boolean[] = []
+    const controller = createMuteController({
+      player: fakePlayer(false, order),
+      store: storage,
+      currentSave: () => readSave(storage),
+      onChange: (muted: boolean) => changes.push(muted),
+    })
+
+    expect(changes).toEqual([])
+    controller.toggle()
+    expect(changes).toEqual([true])
+
+    // This is the write the game makes on its next tap: the context it was told about has to keep the
+    // new state, not the one it booted with.
+    writeProgress(state, true, storage)
+    expect(readSave(storage)!.muted).toBe(true)
+  })
+
+  it('the game reads mute back from the player when it writes progress (issue #17)', () => {
+    // The controller cannot reach into the game's save context, so the composition root has to take the
+    // live value. Reading it once at boot is what made the next tap undo the toggle.
+    const mainSource = readFileSync(join(SRC, '..', 'main.ts'), 'utf8')
+    expect(mainSource).toContain('context.muted = mute.muted()')
+    expect(mainSource).toContain('onChange')
+  })
+
   it('still toggles, and still tells the player, when storage refuses (issue #17)', () => {
     const order: string[] = []
     const store = deniedStore()

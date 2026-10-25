@@ -108,12 +108,27 @@ export function createCelebration(
   let raf = 0
   let lastFrame = 0
   let frameCount = 0
+  /**
+   * Every pending timer this layer owns: the staggered balloon chimes, the play-arrow reveal and the
+   * opening bursts. `stop()` clears them all, so a party that has been left cannot tick into the next
+   * one and an idle layer owns nothing (SPEC §10.1, issue #12).
+   */
+  const timers: number[] = []
   // The tier is decided by the time the layer itself spends on a frame, not by the wall-clock gap
   // between frames, because the 30fps tier deliberately delivers every other frame (issue #12).
   let lateMs = 0
   let onTimeMs = 0
   let skipFrame = false
   let tier: FrameTier = '60fps'
+
+  function later(ms: number, run: () => void): void {
+    timers.push(window.setTimeout(run, ms))
+  }
+
+  function clearTimers(): void {
+    for (const id of timers) window.clearTimeout(id)
+    timers.length = 0
+  }
 
   // Reduced motion is a CSS rule, so the module has to stop drawing as well: a layer that keeps
   // running at 60fps underneath `visibility: hidden` is still burning frames on a weak tablet (SPEC §13).
@@ -244,11 +259,11 @@ export function createCelebration(
     balloons.push(balloon)
 
     // SPEC §11: the entry chime rises in pitch with the set.
-    window.setTimeout(() => {
+    later(index * CELEBRATION.balloonStaggerMs, () => {
       if (!running) return
       audio.playBalloon(balloon.chimeIndex)
       if (balloons.length === 1 && opts.onFirstBalloon !== undefined) opts.onFirstBalloon()
-    }, index * CELEBRATION.balloonStaggerMs)
+    })
 
     el.addEventListener('click', () => {
       if (!running || balloon.popped) return
@@ -273,9 +288,22 @@ export function createCelebration(
 
   function start(): void {
     running = true
+    // A party always starts clean: no timer or balloon from a party she left can arrive in this one.
+    clearTimers()
     resize()
 
-    if (!reducedMotion) draw()
+    if (!reducedMotion) {
+      draw()
+      // SPEC §10.1 phase 1: fireworks begin immediately, over the board. Waiting for the first balloon
+      // pop or the ambient timer meant the "party" opened on a dimmed, still board.
+      const width = canvas.width / dpr
+      const height = canvas.height / dpr
+      spawnBurst(width * 0.5, height * 0.45)
+      later(180, () => {
+        if (!running) return
+        spawnBurst(width * 0.32, height * 0.55)
+      })
+    }
 
     for (let i = 0; i < partySize(); i++) spawnBalloon(i)
 
@@ -288,17 +316,20 @@ export function createCelebration(
     const reveal = (): void => {
       if (!running) return
       play.classList.add('next--ready')
+      // SPEC §10.1: the big pulsing ▶. Reduced motion strips the animation in CSS.
+      play.classList.add('next--pulsing')
       if (opts.onPlayReady !== undefined) opts.onPlayReady()
     }
     if (reducedMotion) {
       reveal()
     } else {
-      window.setTimeout(reveal, CELEBRATION.playButtonDelayMs)
+      later(CELEBRATION.playButtonDelayMs, reveal)
     }
   }
 
   function stop(): void {
     running = false
+    clearTimers()
     window.cancelAnimationFrame(raf)
     play.classList.remove('next--pulsing')
     play.classList.remove('next--ready')

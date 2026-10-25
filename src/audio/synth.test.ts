@@ -190,6 +190,23 @@ describe('createSynthPlayer', () => {
     expect(FakeContext.oscillators).toBe(2)
   })
 
+  it('a mute cuts what is already scheduled, so unmuting cannot play a backlog (issue #17)', () => {
+    const player = createSynthPlayer()
+    player.unlock()
+
+    player.playCompletion('big')
+    const scheduled = FakeContext.stops
+    expect(scheduled).toBe(AUDIO.fanfareNotes.length + 1)
+
+    // Muting is a cut, not a pause: the scheduled fanfare is stopped rather than left to become
+    // audible again when she turns the sound back on.
+    player.setMuted(true)
+    expect(FakeContext.stops).toBe(scheduled * 2)
+
+    player.setMuted(false)
+    expect(FakeContext.stops).toBe(scheduled * 2)
+  })
+
   it('cancels what is still sounding when the party ends, so the cue cannot bleed into the next level (issue #14)', () => {
     const player = createSynthPlayer()
     player.unlock()

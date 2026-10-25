@@ -16,7 +16,7 @@ import {
   buildResetSave,
   cancelReset,
   confirmIsLive,
-  holdOpensConfirm,
+  holdCompleted,
   initialAdultReset,
   openConfirm,
   type AdultResetState,
@@ -66,41 +66,71 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
 
   let state: AdultResetState = initialAdultReset()
   let heldFrom = 0
-  let timeoutId = 0
+  // Two timers, because they mean different things: the hold timer belongs to the finger still being
+  // down, and the confirm timer belongs to the confirm step. Releasing early must clear the first and
+  // leave the second alone (issue #16).
+  let holdTimer = 0
+  let confirmTimer = 0
+  let pressed = false
 
   const show = (on: boolean): void => {
     icon.hidden = !on
     numeral.classList.toggle('panel__level--confirming', on)
   }
 
+  const clearHold = (): void => {
+    if (holdTimer !== 0) deps.timer.clear(holdTimer)
+    holdTimer = 0
+  }
+
+  const clearConfirm = (): void => {
+    if (confirmTimer !== 0) deps.timer.clear(confirmTimer)
+    confirmTimer = 0
+  }
+
   /** Issue #16: a cancel is clean - no shake, no icon, and no timer left running. */
   const cancel = (): void => {
-    if (timeoutId !== 0) deps.timer.clear(timeoutId)
-    timeoutId = 0
+    pressed = false
+    clearHold()
+    clearConfirm()
     state = cancelReset()
     numeral.classList.remove('panel__level--shaking')
     show(false)
   }
 
-  const press = (): void => {
+  const press = (event: PointerEvent): void => {
+    // While the confirm step is open, only its icon continues it. Pressing anywhere else on the numeral
+    // is "any other interaction", so it cancels instead of starting a second hold.
+    if (state.stage === 'confirm') {
+      if (event.target !== icon) cancel()
+      return
+    }
+
+    pressed = true
     heldFrom = deps.clock.now()
     // SPEC §13: the shake is the only signal before the icon appears, and reduced motion keeps the
     // icon while dropping the shake.
     numeral.classList.add('panel__level--shaking')
 
-    deps.timer.after(ADULT_RESET.holdMs, () => {
-      // Only a hold that really reached `holdMs` gets here; a normal tap released long before it.
-      if (!holdOpensConfirm(deps.clock.now() - heldFrom)) return
-      state = openConfirm(deps.clock.now())
+    clearHold()
+    holdTimer = deps.timer.after(ADULT_RESET.holdMs, () => {
+      holdTimer = 0
+      const now = deps.clock.now()
+      // A normal tap released long before this fires. The `pressed` half is what makes that true even if
+      // the release handler and this timer race: a finger that is no longer down never opens the step.
+      if (!holdCompleted(pressed, now - heldFrom)) return
+      state = openConfirm(now)
       numeral.classList.remove('panel__level--shaking')
       show(true)
-      timeoutId = deps.timer.after(ADULT_RESET.confirmTimeoutMs, cancel)
+      confirmTimer = deps.timer.after(ADULT_RESET.confirmTimeoutMs, cancel)
     })
   }
 
   const release = (): void => {
+    pressed = false
     numeral.classList.remove('panel__level--shaking')
-    // Releasing before the hold completed is a normal tap, which does nothing at all (SPEC §14.2).
+    // SPEC §14.2: releasing before the hold completed is a normal tap, which does nothing at all.
+    if (state.stage === 'idle') clearHold()
   }
 
   const onNumeralClick = (event: Event): void => {
@@ -117,21 +147,37 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
     deps.onReset(save)
   }
 
+  /**
+   * Issue #16: any other interaction cancels the confirm step. This is on the document rather than the
+   * numeral, because the adult might touch the board or the mute after opening it, and a confirm that
+   * waits for its 15-second timeout is not "cancels cleanly".
+   */
+  const onDocumentPointerDown = (event: PointerEvent): void => {
+    if (state.stage !== 'confirm') return
+    if (numeral.contains(event.target as Node)) return
+    cancel()
+  }
+
   numeral.addEventListener('pointerdown', press)
   numeral.addEventListener('pointerup', release)
+  numeral.addEventListener('pointerleave', release)
   numeral.addEventListener('pointercancel', cancel)
   numeral.addEventListener('click', onNumeralClick)
   icon.addEventListener('click', onIconClick)
+  document.addEventListener('pointerdown', onDocumentPointerDown, true)
 
   return {
     element: numeral,
     destroy(): void {
       numeral.removeEventListener('pointerdown', press)
       numeral.removeEventListener('pointerup', release)
+      numeral.removeEventListener('pointerleave', release)
       numeral.removeEventListener('pointercancel', cancel)
       numeral.removeEventListener('click', onNumeralClick)
       icon.removeEventListener('click', onIconClick)
-      if (timeoutId !== 0) deps.timer.clear(timeoutId)
+      document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+      clearHold()
+      clearConfirm()
       icon.remove()
     },
   }
