@@ -277,27 +277,44 @@ describe('the bunch geometry layout owns (SPEC §10.1, issue #32)', () => {
   })
 
   it('holds twelve balloons at the target spacing on the tablet and reports the phone as not holding them', () => {
-    // The fit is the worst-case lattice the placement rule samples inside: at 55% of the largest jittered
-    // balloon, the tablet has five lattice columns and five rows - twenty centres for twelve balloons - while
-    // a phone has three by three, which is what makes the count drop there rather than the size (issue #33).
+    // The fit is the worst-case lattice the placement rule samples inside, and the criterion is read as
+    // numbers rather than as a claim: half the largest jittered balloon plus the float amplitude plus
+    // `balloonMarginPx` on the sides, the height `LAYOUT.balloonHeightRatio` gives the box at the top, and
+    // the arrow's band along the bottom. Charged that way the tablet is five columns of three rows - fifteen
+    // centres for twelve balloons - the phone is three columns of one row, and a portrait turn that keeps the
+    // 558 px board is six by four (issue #33). All three boards can give the region, so the region itself is
+    // what the charge uses rather than the exposure floor.
+    const jitterMax = 1 + LAYOUT.balloonSizeJitter
+    const shapeOf = (boardPx: number, balloonPx: number, arrowBandPx: number, rung: number) => {
+      const worstPx = balloonPx * jitterMax
+      const cellPx = (rung / 100) * worstPx
+      const halfBoxPx = (worstPx * LAYOUT.balloonHeightRatio) / 2
+      return {
+        cols: Math.floor((boardPx - 2 * (worstPx / 2 + CELEBRATION.balloonSwayPx + LAYOUT.balloonMarginPx)) / cellPx) + 1,
+        rows: Math.floor(
+          (boardPx - (halfBoxPx + CELEBRATION.balloonBobPx + LAYOUT.balloonMarginPx) - (arrowBandPx + halfBoxPx + CELEBRATION.balloonBobPx)) / cellPx,
+        ) + 1,
+      }
+    }
+
     const tablet = computeLayout(TABLET, GRID)
     expect(tablet.bunchFitsBoard).toBe(true)
     const phone = computeLayout({ width: 480, height: 320 }, GRID)
     expect(phone.bunchFitsBoard).toBe(false)
+    const portrait = computeLayout({ width: 600, height: 1024 }, GRID)
+    expect(portrait.bunchFitsBoard).toBe(true)
 
-    // A portrait turn keeps the fit: the board is 558 px, so the lattice is six by five.
-    expect(computeLayout({ width: 600, height: 1024 }, GRID).bunchFitsBoard).toBe(true)
+    expect(shapeOf(tablet.boardPx, tablet.balloonPx, tablet.arrowBandPx, 55)).toEqual({ cols: 5, rows: 3 })
+    // The phone's single row is the same charge against a smaller board: its arrow band is 120 of the 360 px
+    // board, so after the box and the band there is room for one row only, and the count drops at the floor
+    // rung, where the fourth column appears.
+    expect(shapeOf(phone.boardPx, phone.balloonPx, phone.arrowBandPx, 55)).toEqual({ cols: 3, rows: 1 })
+    expect(shapeOf(phone.boardPx, phone.balloonPx, phone.arrowBandPx, 40)).toEqual({ cols: 4, rows: 1 })
+    expect(shapeOf(portrait.boardPx, portrait.balloonPx, portrait.arrowBandPx, 55)).toEqual({ cols: 6, rows: 4 })
 
-    // The keep-out is what makes the two disagree, so it is asserted as numbers rather than as a claim:
+    // The keep-out is what makes the tablet and the phone disagree, so it is pinned as a number:
     // half the largest jittered balloon, the float amplitude, and `balloonMarginPx` on each side.
-    const jitterMax = 1 + LAYOUT.balloonSizeJitter
-    const halfMaxPx = (tablet.balloonPx * jitterMax) / 2
-    expect(halfMaxPx + CELEBRATION.balloonSwayPx + LAYOUT.balloonMarginPx).toBeCloseTo(94.55, 2)
-    const usableWidthPx = tablet.boardPx - 2 * (halfMaxPx + CELEBRATION.balloonSwayPx + LAYOUT.balloonMarginPx)
-    const usableHeightPx = tablet.boardPx - (halfMaxPx + CELEBRATION.balloonBobPx + LAYOUT.balloonMarginPx) - tablet.arrowBandPx
-    const latticeCellPx = LAYOUT.balloonSpacingFactor * tablet.balloonPx * jitterMax
-    expect(Math.floor(usableWidthPx / latticeCellPx) + 1).toBe(5)
-    expect(Math.floor(usableHeightPx / latticeCellPx) + 1).toBe(5)
+    expect((tablet.balloonPx * jitterMax) / 2 + CELEBRATION.balloonSwayPx + LAYOUT.balloonMarginPx).toBeCloseTo(94.55, 2)
 
     // And the ladder's order is what the criterion reads: size holds first (the phone is at the floor),
     // spacing tightens before the count, and the count only drops when the floor rung cannot hold the set.

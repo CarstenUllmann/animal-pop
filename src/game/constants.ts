@@ -205,17 +205,20 @@ export const LAYOUT = {
   balloonSpacingFactor: 0.55,
   /** The floor below which the spacing stops tightening; past it, the count drops instead (issue #33). */
   balloonMinExposure: 0.40,
+  /** The rungs between the target spacing and the floor are the percents in steps of this (issue #33), so the ladder is derived from the two constants above rather than typed as a list. */
+  balloonSpacingStepPct: 5,
   /**
    * `.celebration`'s `padding-bottom` percent — the band the play arrow sits in. Mirrored against the
    * stylesheet by `styles.test.ts`, the same way the other chrome values are.
    */
   celebrationBottomPaddingPct: 4,
-  /**
-   * The band and the spread are the fallback the stylesheet still uses for a single balloon. Since issue #33
-   * the placement rule in `ui/bunch.ts` is the source of truth, and the bunch is no longer percentages of
-   * the overlay (`styles.test.ts` asserts this).
-   */
+  /** The fallback the stylesheet carries for a single balloon the module has not placed. `styles.test.ts`
+   *  reads it through the placement rule rather than as a band: on the target tablet 50% up the overlay is a
+   *  place the rule takes, which is the difference between a percent of the overlay and a place in the board. */
   balloonBandBottomMin: 50,
+  /** `ui/celebration.ts`'s legacy percentages. The bunch is not a band or a spread of the overlay any more,
+   *  so these three are read by the celebration only until issue #34 replaces them with the places
+   *  `ui/bunch.ts` answers. */
   balloonBandBottomMax: 78,
   balloonSpreadStart: -8,
   balloonSpreadEnd: 108,

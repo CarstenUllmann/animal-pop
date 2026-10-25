@@ -1,4 +1,5 @@
-import { CELEBRATION, FONTS, LAYOUT, MAX_BALLOONS } from '../game/constants'
+import { FONTS, LAYOUT, MAX_BALLOONS } from '../game/constants'
+import { bunchCapacity, spacingRungs, type BunchMetrics } from './bunch'
 
 export interface Viewport {
   width: number
@@ -173,6 +174,11 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     LAYOUT.balloonMarginPx,
   )
 
+  // Issue #33: the placement rule lives in `ui/bunch.ts`, so the fit is read off that rule rather than a
+  // lattice this module keeps a second copy of. The board the rule is asked about is the painted board, the
+  // nominal balloon on this device, and the band the arrow refuses.
+  const bunchBoard = bunchMetricsFor(boardPx, balloonPx, arrowBandPx)
+
   return {
     panelWidthFraction,
     panelHeightFraction,
@@ -187,12 +193,12 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     boardOffsetXPx,
     boardOffsetYPx,
     arrowBandPx,
-    // The fit is the worst-case lattice the placement rule samples inside: a centre grid one
-    // `spacingFactor x the largest jittered balloon` apart holds every pair at the spacing SPEC §10.1 asks
-    // for, so a board that cannot hold twelve of those centres cannot hold twelve balloons at that spacing.
-    // `ui/bunch.ts` (#33) owns the rule this number is read from, and this is the assertion that keeps it
-    // honest: true on the target tablet, false on a phone, where the count has to drop instead.
-    bunchFitsBoard: latticeCapacityPx(boardPx, balloonPx, arrowBandPx, LAYOUT.balloonSpacingFactor) >= MAX_BALLOONS,
+    // The fit is the worst case the placement rule can be held to (issue #33): the ladder's widest rung,
+    // counted with the worst spacing and the largest jittered balloon the rung allows, so a board that
+    // cannot hold that many centres cannot hold twelve balloons at that spacing. `ui/bunch.ts` owns the rule
+    // this number is read from, and this is the assertion that keeps it honest: true on the target tablet
+    // and on a portrait turn, false on a phone, where the count has to drop instead.
+    bunchFitsBoard: bunchCapacity(bunchBoard, spacingRungs()[0] as number) >= MAX_BALLOONS,
     interactivePx: LAYOUT.interactiveMinPx,
     portrait,
     tapTargetTooSmall: cell < LAYOUT.tapTargetCssPx,
@@ -281,20 +287,13 @@ function goalCardRowPx(goalPx: number): number {
 }
 
 /**
- * Issue #32: how many centres the board holds at `spacingFactor`. It is the worst case the placement rule can
- * be held to (issue #33): on a grid one `factor x the largest jittered balloon` apart, the closest two
- * centres are that far, and the required spacing is `factor x the mean of two jittered sizes`, so the lattice
- * is valid for every pair whatever the jitter draws. The keep-out is half the largest jittered balloon plus
- * the float amplitude plus `balloonMarginPx` on left, right and top; the bottom is the arrow's band.
+ * Issue #33: the board as `ui/bunch.ts` sees it. The board is square (SPEC §13), so the two edges are the
+ * same number, and this is all the placement rule needs to know about a device: the painted board, the
+ * nominal balloon on it, and the band the play arrow refuses. Celebration asks for the same three numbers,
+ * which is why the rule cannot disagree with the fit reported here.
  */
-function latticeCapacityPx(boardPx: number, balloonPx: number, arrowBandPx: number, spacingFactor: number): number {
-  const jitterMax = 1 + LAYOUT.balloonSizeJitter
-  const halfMaxPx = (balloonPx * jitterMax) / 2
-  const usableWidthPx = boardPx - 2 * (halfMaxPx + CELEBRATION.balloonSwayPx + LAYOUT.balloonMarginPx)
-  const usableHeightPx = boardPx - (halfMaxPx + CELEBRATION.balloonBobPx + LAYOUT.balloonMarginPx) - arrowBandPx
-  if (usableWidthPx <= 0 || usableHeightPx <= 0) return 0
-  const latticeCellPx = spacingFactor * balloonPx * jitterMax
-  return (Math.floor(usableWidthPx / latticeCellPx) + 1) * (Math.floor(usableHeightPx / latticeCellPx) + 1)
+export function bunchMetricsFor(boardPx: number, balloonPx: number, arrowBandPx: number): BunchMetrics {
+  return { boardWidthPx: boardPx, boardHeightPx: boardPx, balloonPx, arrowBandPx }
 }
 
 /** The top of the play arrow's band, measured up from the board's bottom edge (SPEC §10.1, *The arrow*). */

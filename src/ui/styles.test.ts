@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { CELEBRATION, FONTS, LAYOUT } from '../game/constants'
 import { CONFIRM_GLYPH, SHAKE_MS } from './adultReset'
+import { canPlace } from './bunch'
+import { bunchMetricsFor, computeLayout } from './layout'
 
 /**
  * The stylesheet is part of the shipped code, so it is checked against the same numbers the
@@ -13,6 +15,7 @@ import { CONFIRM_GLYPH, SHAKE_MS } from './adultReset'
 
 const SRC = dirname(fileURLToPath(import.meta.url))
 const css = readFileSync(join(SRC, '..', 'style.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+const GRID = { rows: 6, cols: 6 }
 
 function rule(selector: string): string {
   const start = css.indexOf(`${selector} {`)
@@ -145,18 +148,42 @@ describe('celebration stylesheet', () => {
     expect(rule('.next')).toContain('var(--play-button-delay)')
   })
 
-  it('hangs the balloons as a bunch in the upper half, wide enough to overlap (issues #25, #28)', () => {
-    // The party is an overlay over the board, so its composition has to leave the balloons reachable and
-    // the way out of the level unmistakable: the arrow owns the bottom-centre, the balloons rest above it.
+  it('hangs the bunch through the placement rule, and keeps only the arrow band as its own composition (issues #25, #33)', () => {
+    // The overlay is `.board-area`'s padding box, so a percentage of it is not a position inside the board.
+    // `styles.test.ts` used to read the composition as a 50%-78% band and a -8%..108% spread; since issue #33
+    // the centres belong to `ui/bunch.ts`, and the only percent the stylesheet still owns is the band the
+    // arrow sits in.
     expect(rule('.celebration')).toContain('justify-content: flex-end')
-    expect(rule('.celebration')).toContain('padding-bottom: 4%')
-    expect(rule('.balloon')).toContain(`bottom: ${LAYOUT.balloonBandBottomMin}%`)
-    expect(rule('.balloon')).not.toContain('bottom: 26%')
-    // The module writes the arc, jitter and spread inline; the band is the resting fallback.
-    expect(LAYOUT.balloonBandBottomMax).toBeLessThanOrEqual(80)
-    expect(LAYOUT.balloonSpreadStart).toBeLessThan(0)
-    expect(LAYOUT.balloonSpreadEnd).toBeGreaterThan(100)
-    // The rise has to travel from below the resting band, not just fade in where it lands.
+    expect(rule('.celebration')).toContain(`padding-bottom: ${LAYOUT.celebrationBottomPaddingPct}%`)
+    expect(rule('.balloon')).toContain('position: absolute')
+    // The rule owns the gap between balloons, so the stylesheet cannot hold a rival copy of it as a margin box.
+    expect(rule('.balloon')).not.toContain('margin')
+
+    // The two ends of the spread the stylesheet used to hang the outermost balloons at are places the rule
+    // refuses: a centre at the board's left or right edge cannot keep its region inside the board.
+    const tablet = computeLayout({ width: 1024, height: 600 }, GRID)
+    const board = bunchMetricsFor(tablet.boardPx, tablet.balloonPx, tablet.arrowBandPx)
+    const centre = { x: board.boardWidthPx / 2, y: 270, size: tablet.balloonPx }
+    expect(canPlace(board, centre)).toBe(true)
+    expect(canPlace(board, { x: 0, y: centre.y, size: tablet.balloonPx })).toBe(false)
+    expect(canPlace(board, { x: board.boardWidthPx, y: centre.y, size: tablet.balloonPx })).toBe(false)
+
+    // What the stylesheet still carries is the fallback for a single balloon the module has not placed, and it
+    // is read through the rule: 50% of the overlay is 300 px up from the overlay's bottom, which is 270 px up
+    // from the board's - the board starts `boardOffsetYPx` inside the overlay. That is a place the rule takes.
+    // In landscape `.board-area` is the whole 600 CSS px height; `landscapeBoardFraction` sizes the cell inside
+    // it, it is not the overlay's own height, which is exactly the confusion a percent band produced.
+    const percent = dimensionFor('.balloon', 'bottom', 0)
+    expect(percent).toBe(50)
+    const overlayHeightPx = 600
+    const fallbackY = overlayHeightPx * ((percent as number) / 100) - tablet.boardOffsetYPx
+    expect(fallbackY).toBe(270)
+    expect(canPlace(board, { x: board.boardWidthPx / 2, y: fallbackY, size: tablet.balloonPx })).toBe(true)
+    // And it is clear of the arrow's band, which is the other half of the same rule.
+    expect(fallbackY).toBeGreaterThanOrEqual(board.arrowBandPx + (tablet.balloonPx * LAYOUT.balloonHeightRatio) / 2 + CELEBRATION.balloonBobPx)
+
+    // The rise still travels from below the board edge, which is outside the board on purpose: the inside rule
+    // is only about the resting place (issue #34).
     expect(css).toContain('transform: translateY(600%) scale(0.7)')
   })
 
