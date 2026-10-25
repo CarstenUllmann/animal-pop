@@ -10,16 +10,20 @@ import { describeError, traceLines, type BootLog, type BootRun } from './bootlog
 import {
   DEBUG_ROWS,
   MAX_VALUE_LENGTH,
+  cellText,
   createRowModel,
   debugRowText,
+  displayMode,
   errorText,
   goalsText,
   isDebugRow,
+  motionPreference,
   nextLevelClick,
   parseDebugFlag,
   recordFps,
   rowText,
   updateFps,
+  viewportText,
 } from './debug'
 
 /**
@@ -192,9 +196,51 @@ describe('parseDebugFlag', () => {
   })
 })
 
+describe('environment rows (issues #10, #19, #23)', () => {
+  const query = (answers: Record<string, boolean>) => ({
+    matchMedia: (q: string) => ({ matches: answers[q] === true }) as MediaQueryList,
+  })
+
+  it('tells a standalone launch from a browser visit', () => {
+    // Issue #23 asked the reporter what the `display` row says, because the same bundle runs in the browser
+    // (Chrome 138) and the installed app (System WebView 61). `navigator.standalone` is the iOS spelling.
+    expect(displayMode(query({ '(display-mode: standalone)': true }), undefined)).toBe('standalone')
+    expect(displayMode(query({ '(display-mode: standalone)': false }), undefined)).toBe('browser')
+    expect(displayMode(query({}), true)).toBe('standalone')
+    // No matchMedia is an answer, not a crash: it names an engine old enough to matter.
+    expect(displayMode(null, undefined)).toBe('unknown')
+  })
+
+  it('reports the system motion setting the reduced-motion rules read', () => {
+    expect(motionPreference(query({ '(prefers-reduced-motion: reduce)': true }))).toBe('reduced')
+    expect(motionPreference(query({}))).toBe('full')
+    expect(motionPreference(null)).toBe('unknown')
+  })
+
+  it('reports the viewport and the board cell as the numbers they are', () => {
+    expect(viewportText(1024, 600)).toBe('1024×600')
+    expect(viewportText(600.4, 1023.6)).toBe('600×1024')
+    expect(cellText(90)).toBe('90px')
+    expect(cellText(89.6)).toBe('90px')
+  })
+
+  it('paints the environment from the mount values', () => {
+    const rows = createRowModel({
+      display: 'standalone',
+      motion: 'reduced',
+      viewport: '1024×600',
+      cell: '90px',
+    })
+    expect(rows.text('display')).toBe('standalone')
+    expect(rows.text('motion')).toBe('reduced')
+    expect(rows.text('viewport')).toBe('1024×600')
+    expect(rows.text('cell')).toBe('90px')
+  })
+})
+
 describe('debug rows', () => {
   it('accepts the rows the game can report and nothing else (issue #18)', () => {
-    for (const key of ['level', 'seed', 'animals', 'rack', 'goals', 'queue', 'balloons', 'particles', 'tier', 'fps']) {
+    for (const key of ['level', 'seed', 'display', 'motion', 'viewport', 'cell', 'animals', 'rack', 'goals', 'queue', 'balloons', 'particles', 'tier', 'fps']) {
       expect(isDebugRow(key)).toBe(true)
     }
     expect(isDebugRow('whatever')).toBe(false)
@@ -312,6 +358,10 @@ describe('the rows the overlay declares (SPEC §14.3, issue #18)', () => {
     expect(DEBUG_ROWS.map((row) => row.key)).toEqual([
       'level',
       'seed',
+      'display',
+      'motion',
+      'viewport',
+      'cell',
       'animals',
       'rack',
       'goals',
@@ -324,9 +374,11 @@ describe('the rows the overlay declares (SPEC §14.3, issue #18)', () => {
     ])
   })
 
-  it('has exactly one row fixed by the definition rather than by a report', () => {
-    // SPEC §9.2: the session seed is generated once per install, so the seed row cannot move during a run.
-    expect(DEBUG_ROWS.filter((row) => row.fixed).map((row) => row.key)).toEqual(['seed'])
+  it('has the rows fixed by the definition rather than by a report', () => {
+    // SPEC §9.2: the session seed is generated once per install. The display mode and the system's motion
+    // preference are read once by the modules they describe (SPEC §13, issue #23), so a boot snapshot is the
+    // whole truth for the run and the row does not pretend to be live.
+    expect(DEBUG_ROWS.filter((row) => row.fixed).map((row) => row.key)).toEqual(['seed', 'display', 'motion'])
   })
 
   it('has something to show for every row before the game reports it', () => {
@@ -503,7 +555,7 @@ describe('off by default (SPEC §14.3, issue #18)', () => {
 
   it('mounts nothing without the flag, and the report calls cost nothing when it is off', () => {
     expect(mainSource).toMatch(/parseDebugFlag\([^)]*\)\s*\?\s*mountDebugOverlay/)
-    expect(mainSource).toMatch(/const debug = [\s\S]{0,400}: null/)
+    expect(mainSource).toMatch(/const debug = [\s\S]{0,900}: null/)
     expect(functionBlock(mainSource, 'function showLevel()')).toContain('if (debug === null) return')
     // The frame sampling loop is the only thing the overlay keeps running, and it runs only for a mounted one.
     expect(mainSource).toMatch(/if \(debug !== null\) \{[^}]*measureFps/)
@@ -516,8 +568,9 @@ describe('no network, no external tooling (SPEC §14.3)', () => {
     for (const banned of ['fetch(', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'import(', 'beacon(']) {
       expect(code).not.toContain(banned)
     }
-    // The only import is app-internal: the overlay reads the boot trace, and nothing outside the app.
-    expect(uniqueMatches(debugSource, /from '([^']+)'/g)).toEqual(['./bootlog'])
+    // The only imports are app-internal: the overlay reads the boot trace and the media-query shape,
+    // and reaches nothing outside the app.
+    expect(uniqueMatches(debugSource, /from '([^']+)'/g)).toEqual(['./bootlog', './capabilities'])
   })
 
   it('writes nothing, so a debug run cannot change the save it is reading', () => {

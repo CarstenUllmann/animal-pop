@@ -11,9 +11,9 @@ import type { PopResult, SaveState, TapResult } from './game/types'
 import { mountAdultReset, type Timer } from './ui/adultReset'
 import { createBootLog, describeError } from './ui/bootlog'
 import { createBoardView } from './ui/boardView'
-import { capabilityFlags, engineToken, hasRandomValues } from './ui/capabilities'
+import { capabilityFlags, engineToken, hasMatchMedia, hasRandomValues } from './ui/capabilities'
 import { createCelebration, type CelebrationLayer } from './ui/celebration'
-import { animalsText, goalsText, mountDebugOverlay, numberText, parseDebugFlag, type DebugOverlay, type GoalRow } from './ui/debug'
+import { animalsText, cellText, displayMode, goalsText, motionPreference, mountDebugOverlay, numberText, parseDebugFlag, viewportText, type DebugOverlay, type GoalRow } from './ui/debug'
 import { renderFallback } from './ui/fallback'
 import { applyLayout, type Viewport } from './ui/layout'
 import { createMuteController, mountMuteToggle } from './ui/muteToggle'
@@ -156,11 +156,21 @@ function start(root: HTMLElement): void {
     },
   })
 
+  // SPEC §13: the layout is computed before the overlay is mounted, because the overlay reports the cell
+  // the layout produced - that number is issue #10's device measurement. `layout` is reassigned on rotation.
+  let layout = applyLayout(root, viewport(), { rows: GRID, cols: GRID })
+  // Feature-detected once: the environment rows are read from the same probe the reduced-motion rules use.
+  const media = hasMatchMedia(window) ? window : null
+
   // The only debugging channel we can rely on once installed (SPEC §14.3).
   const debug = parseDebugFlag(window.location.search)
     ? mountDebugOverlay(document.body, {
         level: state.level,
         seed: sessionSeed,
+        display: displayMode(media, navigator.standalone),
+        motion: motionPreference(media),
+        viewport: viewportText(window.innerWidth, window.innerHeight),
+        cell: cellText(layout.cell),
         animals: state.roster,
         bubbles: state.bubbles,
         goals: goalRows(),
@@ -204,12 +214,12 @@ function start(root: HTMLElement): void {
     window.requestAnimationFrame(sample)
   }
 
-  applyLayout(root, viewport(), { rows: GRID, cols: GRID })
   window.addEventListener('resize', () => {
     // Issue #19: a turn mid-level keeps the state, and the layout has to be playable straight away. The
     // canvas is sized from the rect the party covers, so rotation also has to resize it.
-    applyLayout(root, viewport(), { rows: GRID, cols: GRID })
+    layout = applyLayout(root, viewport(), { rows: GRID, cols: GRID })
     celebration.resize()
+    reportEnvironment()
   })
 
   // Issue #11 (SPEC §7.5): the queue is the pure module in `game/tapQueue.ts`, so what it decides is
@@ -355,6 +365,17 @@ function start(root: HTMLElement): void {
   function reportQueue(): void {
     if (debug === null) return
     debug.set('queue', numberText(queue.size()))
+  }
+
+  /**
+   * The environment rows move when the tablet turns, so they are re-reported from the same place that
+   * re-applies the layout (issue #19). `display` and `motion` are fixed for the run: the modules they
+   * describe read them once at boot, so the row showing the boot value is the truthful one.
+   */
+  function reportEnvironment(): void {
+    if (debug === null) return
+    debug.set('viewport', viewportText(window.innerWidth, window.innerHeight))
+    debug.set('cell', cellText(layout.cell))
   }
 
   /**

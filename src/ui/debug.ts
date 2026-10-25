@@ -1,4 +1,5 @@
 import { traceLines, type BootLog } from './bootlog'
+import type { MatchMedia } from './capabilities'
 
 /**
  * Adult debug overlay (`?debug=1`), SPEC §14.3 and issue #18.
@@ -38,6 +39,14 @@ export interface GoalRow {
 export interface DebugInfo {
   level?: number
   seed?: number
+  /** `standalone` for the installed app, `browser` for a Chrome visit (issue #23). */
+  display?: string
+  /** The viewport the layout was computed for, `1024×600` (SPEC §16.3, issue #20). */
+  viewport?: string
+  /** The board cell size the layout gives, which is the device measurement §13 asks for (issue #10). */
+  cell?: string
+  /** Whether the system asks for reduced motion, which the board and party read once at boot (SPEC §13). */
+  motion?: string
   animals?: readonly string[]
   /** Bubbles left in the rack (SPEC §13). */
   bubbles?: number
@@ -86,6 +95,14 @@ export interface RowDef {
 export const DEBUG_ROWS: readonly RowDef[] = [
   { key: 'level', label: 'level', initial: (info) => textOr(numberText(info.level), 'not started') },
   { key: 'seed', label: 'seed', initial: (info) => textOr(seedText(info.seed), 'not recorded'), fixed: true },
+  // The environment rows make the device checks readable on the tablet itself. `display` is what tells
+  // a standalone launch from a browser visit (issue #23 asked for it), `motion` is the system setting the
+  // reduced-motion rules read (issue #19), and `viewport`/`cell` are the numbers §13's fit and issue #10's
+  // 90 CSS px criterion are measured against (issue #20).
+  { key: 'display', label: 'display', initial: (info) => textOr(info.display, 'unknown'), fixed: true },
+  { key: 'motion', label: 'motion', initial: (info) => textOr(info.motion, 'unknown'), fixed: true },
+  { key: 'viewport', label: 'viewport', initial: (info) => textOr(info.viewport, 'unknown') },
+  { key: 'cell', label: 'board cell', initial: (info) => textOr(info.cell, 'unknown') },
   { key: 'animals', label: 'animals', initial: (info) => animalsText(info.animals) },
   { key: 'rack', label: 'rack', initial: (info) => textOr(numberText(info.bubbles), 'no rack') },
   { key: 'goals', label: 'remaining goals', initial: (info) => goalsText(info.goals) },
@@ -135,6 +152,36 @@ export function numberText(value: number | undefined): string {
 
 export function seedText(seed: number | undefined): string {
   return seed === undefined ? '' : `0x${(seed >>> 0).toString(16)}`
+}
+
+/**
+ * What kind of launch this is (issue #23).
+ *
+ * The browser and the installed app run the same bundle in different engines, so a crash report is only
+ * meaningful once the overlay says which one it is. `navigator.standalone` is the iOS spelling; Android's
+ * WebAPK answers the `display-mode` media query. `unknown` is a real answer: it names an engine without
+ * `matchMedia`, which is exactly the kind of old WebView issue #23 is about.
+ */
+export function displayMode(media: MatchMedia | null, standalone: boolean | undefined): string {
+  if (standalone === true) return 'standalone'
+  if (media === null) return 'unknown'
+  return media.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser'
+}
+
+/** The system's reduced-motion setting (SPEC §13, issue #19). The modules read it once at boot. */
+export function motionPreference(media: MatchMedia | null): string {
+  if (media === null) return 'unknown'
+  return media.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full'
+}
+
+/** The viewport the layout was computed for, in CSS px (SPEC §16.3). */
+export function viewportText(width: number, height: number): string {
+  return `${Math.round(width)}×${Math.round(height)}`
+}
+
+/** The board cell size, rounded the way the stylesheet writes it (SPEC §13). */
+export function cellText(cell: number): string {
+  return `${Math.round(cell)}px`
 }
 
 export function animalsText(value: unknown): string {

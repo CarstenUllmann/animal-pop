@@ -452,7 +452,12 @@ interface SaveState {
 ### 14.3 Debug overlay
 
 `?debug=1` shows: level, seed, animal types in play, bubbles, remaining goals, fps, last
-error message, and a "next level" button. Off by default. This is the only on-device debugging
+error message, and a "next level" button. The environment rows are what the device checklist reads:
+`display` says `standalone` or `browser`, `motion` says whether the system asked for reduced
+motion, `viewport` is the size the layout was computed for, and `board cell` is the CSS px the
+layout gives a tile — the number §13's 90 px tap target and issue #10's fit are measured against.
+`display` and `motion` are fixed at boot, because the modules they describe read them once.
+Off by default. This is the only on-device debugging
 channel (no USB tethering guaranteed), so it must be built in M0 rather than bolted on.
 
 It also carries a `boot` row with the persisted boot trace from §14.1 — the previous run's steps

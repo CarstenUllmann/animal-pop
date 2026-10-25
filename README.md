@@ -87,8 +87,12 @@ about 95s, because the fun tail after the goals is open-ended by design (§1).
 
 Open `?debug=1` (for example
 <https://carstenullmann.github.io/animal-pop/?debug=1>) to show the on-device debug overlay. It
-reports the session seed, the animals in play, the rack, the goals still missing, the tap queue,
+reports the session seed, whether the launch is `standalone` or `browser`, the system's `motion`
+setting, the board cell size, the animals in play, the rack, the goals still missing, the tap queue,
 the live balloon and particle counts, the frame tier, FPS, the viewport and the boot trace. The
+environment rows are what the device checklist reads: `display` and `cell` answer the install and
+90 CSS px questions (issues #23 and #10), `motion` answers the reduced-motion check (issue #19), and
+`viewport` follows a rotation. The
 `fps` row averages the frames the browser actually delivers, and the frame tier is the celebration's
 own degrade/recover decision, measured on those same intervals — that is what issues #12 and #20
 record on the tablet. The
