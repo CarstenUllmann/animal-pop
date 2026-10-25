@@ -76,6 +76,29 @@ describe('layout on the target tablet (SPEC §13)', () => {
     expect(rackHeight + portrait.interactivePx + portrait.goalPx + 40).toBeLessThanOrEqual(panelRow)
   })
 
+  it('keeps the whole board inside the viewport in portrait, its padding included (issue #19)', () => {
+    // The board was sized from the board's share without charging `.board-area`'s padding, so on a 600x1024
+    // viewport it painted 11 CSS px below the page and the bottom row of tiles was cut off. The share is the
+    // board's whole area now, and the padding comes out of it before the cell is chosen.
+    for (const viewport of [
+      { width: 600, height: 1024 },
+      { width: 800, height: 1280 },
+      { width: 834, height: 1112 },
+    ]) {
+      const metrics = computeLayout(viewport, GRID)
+      const areaHeight = viewport.height - metrics.panelRowPx
+      expect(metrics.portrait).toBe(true)
+      expect(metrics.boardFitsArea).toBe(true)
+      expect(metrics.cell).toBeGreaterThanOrEqual(LAYOUT.tapTargetCssPx)
+
+      // Centre the board in its row: the margin left over is the padding plus a remainder, so the board is
+      // fully visible at both ends rather than flush against one and past the other.
+      const margin = (areaHeight - metrics.boardPx) / 2
+      expect(margin).toBeGreaterThanOrEqual(LAYOUT.chrome.boardAreaPaddingPx - 1)
+      expect(metrics.boardPx + 2 * LAYOUT.chrome.boardAreaPaddingPx).toBeLessThanOrEqual(areaHeight)
+    }
+  })
+
   it('flags a device smaller than the spec assumes rather than shrinking the target', () => {
     const small = computeLayout({ width: 480, height: 320 }, GRID)
     expect(small.cell).toBeLessThan(LAYOUT.tapTargetCssPx)
@@ -134,18 +157,18 @@ describe('the panel shows everything at once (SPEC §8.2, §13, issue #10)', () 
   it('in portrait the rack is §13\'s band across the panel width, and the sized rack fits the panel row (ADR 0001)', () => {
     const portrait = computeLayout({ width: 600, height: 1024 }, GRID)
 
-    // The measurements are the ones recorded before the criterion was amended: a 600x1024 panel row is 461 CSS
-    // px, the level label plus two goal cards take 180 of it, and 239 is left for the rack. What changed is the
-    // rack. Sized from the measurement rather than the pre-measurement guess, and laid out as §13's horizontal
-    // band, it needs 3 rows of the 7 those measurements allow - so this is now the criterion holding, not a
-    // shortfall reported against it.
+    // The panel row on a 600x1024 viewport is 430 CSS px (0.42 of the height; the board takes the rest, with
+    // its own padding charged inside that share). The level label plus two goal cards take 180 of it, leaving
+    // 208 for the rack. Sized from the measurement rather than the pre-measurement guess, and laid out as §13's
+    // horizontal band, it needs 3 rows of the 6 those measurements allow - so this is the criterion holding,
+    // not a shortfall reported against it.
     const bandWidth = 600 - 2 * LAYOUT.chrome.panelPaddingXPx - LAYOUT.chrome.rackMarginPx - 2 * LAYOUT.chrome.rackPaddingXPx
     const rackRowPx = portrait.bubblePx + LAYOUT.chrome.rackRowPx
     expect(bandWidth).toBe(532)
     expect(portrait.rackColumns).toBe(17)
     expect(portrait.rackColumns * rackRowPx).toBeLessThanOrEqual(bandWidth)
     expect(portrait.rackRows).toBe(3)
-    expect(portrait.rackRowsFit).toBe(7)
+    expect(portrait.rackRowsFit).toBe(6)
     expect(portrait.rackFitsPanel).toBe(true)
 
     // An early level is one row of the band plus a second: level 1 starts at 12 bubbles (SPEC §9.1).

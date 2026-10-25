@@ -81,10 +81,22 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   const panelWidthFraction = portrait ? 1 : LAYOUT.panelWidthFraction
   const panelHeightFraction = portrait ? 1 - LAYOUT.portraitBoardFraction : 1
 
-  // The board is sized from the space the panel leaves it, and stays square by taking the smaller side.
-  // In portrait the panel is a row above the board, so the board has the page width but not the height.
-  const boardHeight = Math.floor(viewport.height * boardFraction)
-  const boardWidth = portrait ? viewport.width : viewport.width - Math.round(viewport.width * LAYOUT.panelWidthFraction)
+  const panelColumnPx = Math.round(viewport.width * panelWidthFraction)
+  const panelRowPx = Math.round(viewport.height * panelHeightFraction)
+
+  // The board is sized from the space the panel leaves it, less the padding `.board-area` centres it
+  // inside, and stays square by taking the smaller side. In portrait the panel is a row above the board,
+  // so the board has the page width but not the height. Charging the padding is what keeps the bottom row
+  // of a portrait board inside the viewport instead of painting under the page's `overflow: hidden`.
+  const boardPaddingPx = 2 * LAYOUT.chrome.boardAreaPaddingPx
+  const boardAreaWidthPx = portrait ? viewport.width : viewport.width - panelColumnPx
+  const boardAreaHeightPx = portrait ? viewport.height - panelRowPx : viewport.height
+  // Landscape's fraction is a cap that already leaves the padding its room (540 of 600 leaves 60);
+  // portrait's fraction is the board's whole area, so the padding comes out of it.
+  const boardHeight = portrait
+    ? Math.floor(viewport.height * boardFraction) - boardPaddingPx
+    : Math.floor(viewport.height * boardFraction)
+  const boardWidth = boardAreaWidthPx - boardPaddingPx
   const cell = between(Math.floor(Math.min(boardHeight / grid.rows, boardWidth / grid.cols)), LAYOUT.cellMinPx, LAYOUT.cellMaxPx)
 
   const bubblePx = between(Math.round(cell * 0.26), LAYOUT.bubblePxMin, LAYOUT.bubblePxMax)
@@ -93,8 +105,6 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
 
   // Issue #10: the fit is measured against the panel and board areas the fractions give, using the chrome
   // the stylesheet actually reserves (LAYOUT.chrome mirrors it), so a rack that fits here fits on screen.
-  const panelColumnPx = Math.round(viewport.width * panelWidthFraction)
-  const panelRowPx = Math.round(viewport.height * panelHeightFraction)
   const panelContentPx = panelRowPx - 2 * LAYOUT.chrome.panelPaddingPx
   // The two goal cards are charged as two stacked rows, which is the worst case: they sit side by side when
   // the panel is wide enough (issue #19), so the fit holds either way. The level label's box is the reserved
@@ -137,8 +147,10 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     rackFitsPanel: rackRowsFit >= rackRows,
     boardPx,
     // The board is only pushed past its area when `cellMinPx` clamps a device smaller than SPEC §13 assumes,
-    // which is the case `tapTargetTooSmall` already reports rather than a layout that can be fixed here.
-    boardFitsArea: boardPx <= boardHeight && boardPx <= boardWidth,
+    // which is the case `tapTargetTooSmall` already reports rather than a layout that can be fixed here. The
+    // test is against the area itself and includes the padding, because a board that fits a budget but not
+    // the box it is centred in is exactly the portrait clipping this guards.
+    boardFitsArea: boardPx + boardPaddingPx <= boardAreaHeightPx && boardPx + boardPaddingPx <= boardAreaWidthPx,
     boardAreaFraction: 1 - panelWidthFraction * panelHeightFraction,
     panelAreaFraction: panelWidthFraction * panelHeightFraction,
   }

@@ -136,9 +136,12 @@ export const LAYOUT = {
   cellMinPx: 60,
   cellMaxPx: 128,
   /* Portrait puts the panel above the board, so the board gives most of that share back (SPEC §13).
-     Written as whole fractions rather than `.55`, because the minifier turns `x ? .55 : y` into
-     `x?.55:y`, which the engine-baseline test reads as optional chaining. */
-  portraitBoardFraction: 0.55,
+     This is the board's whole area, `ui/layout.ts` takes `.board-area`'s padding out of it before
+     sizing the cell, so the number is larger than the share the board paints: 0.58 of 1024 is 594,
+     less 32 of padding, and 6 rows of 93 still fit a 600 CSS px wide portrait viewport.
+     Written as a whole fraction rather than `.58`, because the minifier turns `x ? .58 : y` into
+     `x?.58:y`, which the engine-baseline test reads as optional chaining. */
+  portraitBoardFraction: 0.58,
   /** Smallest tappable element: 48 device px, which is 90 CSS px at the tablet's density. */
   tapTargetCssPx: 90,
   tapTargetDevicePx: 48,
