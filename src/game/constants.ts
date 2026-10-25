@@ -262,6 +262,14 @@ export const PARTICLES = {
    * the tier (issue #12).
    */
   stallMs: 250,
+  /**
+   * How many milliseconds of delivered frames one measurement window spans (issue #29). A single frame
+   * cannot decide the tier: the tablet delivers a mix - 16.7ms then 46.7ms, which is 31fps averaged over a
+   * second - and a meter that classified frames one at a time never accumulated the second §10.2 asks for.
+   * The window is the same scale as the debug overlay's fps row (`FPS_WINDOW_MS`, 300ms), so the tier and
+   * the fps reading the device check compares are measured over comparable spans.
+   */
+  measureWindowMs: 250,
   degradeAfterMs: 1000,
   /**
    * A tier this long inside the budget brings the 60fps tier back (issue #12). §10.2 only says the
