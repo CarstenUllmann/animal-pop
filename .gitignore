@@ -24,17 +24,8 @@ playwright-report/
 # os
 .DS_Store
 Thumbs.db
-graphify-out/.cloud-cta-shown
-graphify-out/.graphify_analysis.json
-graphify-out/.graphify_root
-graphify-out/graph.json
-graphify-out/manifest.json
-graphify-out/cache/stat-index.json
-graphify-out/cache/ast/v0.9.95-s25-g7154a062ba57/16caff313089b5d1d7f860ff4325ac25c4a3c9fde245f6c9dc30e1ca3faa3505.json
-graphify-out/cache/ast/v0.9.95-s25-g7154a062ba57/21e758f6174e43f1046d0914cdc4edfac428017e321eeaf71be5d5471b2ac7ff.json
-graphify-out/cache/ast/v0.9.95-s25-g7154a062ba57/1760ee42a4e56035bd1cad52e597f66d9d76fa6cc6108651b6f7f465db05a5e3.json
-graphify-out/cache/ast/v0.9.95-s25-g7154a062ba57/6728eb99239e79f39ae312184ab748b9f994a13c298c7f21162f4f013588810d.json
-graphify-out/cache/ast/v0.9.95-s25-g7154a062ba57/abb69e294232a6350c14408203c33aa7a0452c551551cdda0104ca1fbd08ff66.json
+/graphify-out/
 .serena/.gitignore
 .serena/project.yml
 .opencode/plugins/graphify.js
+mise.local.toml
