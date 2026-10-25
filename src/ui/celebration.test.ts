@@ -110,21 +110,55 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
     expect(spawn).not.toContain("el.style.transform")
   })
 
-  it('sizes and hangs the balloons from the party size, with Rng jitter (issue #25)', () => {
+  it('hangs the bunch through the placement rule, in px against the board rather than as a percent of the overlay (issues #25, #32-#34)', () => {
+    const hang = section('function hangAt(', 'function hangBunch(')
     const spawn = section('function spawnBalloon(', 'function start(): void {')
-    // Size jitter comes through a custom property the stylesheet multiplies, so a rotation re-sizes
-    // the bunch without the module touching it again.
-    expect(spawn).toContain("setProperty('--balloon-jitter'")
-    expect(spawn).toContain('LAYOUT.balloonSizeJitter')
-    // The spread is wider than the board, and the band is the upper half.
-    expect(source).toContain('LAYOUT.balloonSpreadStart')
-    expect(source).toContain('LAYOUT.balloonSpreadEnd')
-    expect(source).toContain('LAYOUT.balloonBandBottomMin')
-    expect(source).toContain('LAYOUT.balloonBandBottomMax')
-    // The float period, phase and direction all come from the injected Rng (SPEC §2).
+
+    // The module asks the rule for the places and writes what it answers, so the composition has one owner:
+    // `styles.test.ts` reads the same rule for the stylesheet.
+    expect(source).toContain("from './bunch'")
+    expect(source).toContain('placeBunch(')
+    expect(source).toContain('hangBunch()')
+
+    // A place is a centre in the board, so the CSS is px measured from the board's origin inside the overlay,
+    // not a percentage of an overlay that is not the board. The band and the spread are gone with the code
+    // that read them, and so is the size draw: the rule draws the jitter, and the box the stylesheet draws
+    // has to be the size the rule reserved, otherwise the float amplitudes it charges are not the amplitudes
+    // the box travels.
+    expect(hang).toContain('origin.x + place.x')
+    expect(hang).toContain('origin.y + place.y')
+    expect(hang).toMatch(/px`/)
+    expect(hang).toContain("setProperty('--balloon-jitter'")
+    expect(hang).toContain('board.balloonPx')
+    expect(source).not.toContain('LAYOUT.balloonSizeJitter')
+    expect(source).not.toContain('balloonBandBottomMin')
+    expect(source).not.toContain('balloonBandBottomMax')
+    expect(source).not.toContain('balloonSpreadStart')
+    expect(source).not.toContain('balloonSpreadEnd')
+
+    // The arrow's band is still a no-go, and the rule is what refuses it: the module hangs only what the rule
+    // answered, so nothing here can put a balloon on the button she taps to move on (SPEC §10.1).
+    expect(hang).not.toContain('balloonBand')
+
+    // The float period, phase and direction still come from the injected Rng (SPEC §2).
     expect(spawn).toContain('balloonFloatMsMin')
     expect(spawn).toContain('animationDirection')
     expect(spawn).toContain('-rng.next() * period')
+  })
+
+  it('re-clamps the balloons that are already hanging on a rotation, without replaying the rise (issue #34)', () => {
+    const resize = section('function resize(): void {', 'function setTier(')
+    // The canvas is still sized from the rect the party covers (issue #19).
+    expect(resize).toContain('canvas.width')
+    // Every balloon already hanging is moved with the same charges `canPlace` reads, so a turn that would put
+    // one in the arrow band pulls it up out of it. The places the rule answered are kept rather than drawn
+    // again: no `Rng`, so the count cannot change with the orientation.
+    expect(resize).toContain('clampToBoard(')
+    expect(resize).toContain('hangAt(')
+    expect(resize).not.toContain('rng.next')
+    expect(resize).not.toContain('placeBunch')
+    // A move, not a replay: the rise and the float keep their own transform owners and are not restarted.
+    expect(resize).not.toContain('animation')
   })
 
   it('assigns firework colour at spawn, from a 2-3 hue subset (issue #27)', () => {

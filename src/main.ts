@@ -15,7 +15,7 @@ import { capabilityFlags, engineToken, hasMatchMedia, hasRandomValues } from './
 import { createCelebration, type CelebrationLayer } from './ui/celebration'
 import { animalsText, cellText, displayMode, goalsText, motionPreference, mountDebugOverlay, numberText, parseDebugFlag, viewportText, type DebugOverlay, type GoalRow } from './ui/debug'
 import { renderFallback } from './ui/fallback'
-import { applyLayout, type Viewport } from './ui/layout'
+import { applyLayout, bunchMetricsFor, type Viewport } from './ui/layout'
 import { createMuteController, mountMuteToggle } from './ui/muteToggle'
 import { createPanelView } from './ui/panelView'
 import { installKidProofing } from './ui/shell'
@@ -195,6 +195,11 @@ function start(root: HTMLElement): void {
     onFirstBalloon: () => log.step('first balloon'),
     onPlayReady: () => log.step('play arrow'),
     onPlay: nextLevel,
+    // Issue #34: the celebration asks the placement rule for the bunch, and the rule reads the board through
+    // these. Both are read on every set and on every rotation, so a turn mid-party hangs the balloons on the
+    // board the game has now rather than the one the party started on.
+    metrics: () => bunchMetricsFor(layout.boardPx, layout.balloonPx, layout.arrowBandPx),
+    boardOrigin: () => ({ x: layout.boardOffsetXPx, y: layout.boardOffsetYPx }),
   })
 
   // The overlay measures frames itself, because the game is the only thing that knows which frames

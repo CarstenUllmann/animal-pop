@@ -8,8 +8,9 @@ import type { Rng } from '../game/types'
  * tablet, phone, and portrait boards.
  *
  * The board is a `BunchMetrics`, and a place is a centre in board pixels measured from the board's left
- * and bottom edges. Celebration turns a place into CSS by writing `--balloon-px` as the place's own size,
- * so the amplitudes this rule reserves stay honest on every device.
+ * and bottom edges. Celebration turns a place into px against the board's origin inside the overlay (issue
+ * #34), and carries the place's own size as the jitter the stylesheet multiplies, so the amplitudes this
+ * rule reserves stay honest on every device.
  *
  * ## The three rules of a place
  *
@@ -113,6 +114,24 @@ export function canPlace(metrics: BunchMetrics, place: Place): boolean {
   const bounds = centreBounds(metrics, place.size)
   if (bounds.maxX < bounds.minX || bounds.maxY < bounds.minY) return false
   return place.x >= bounds.minX && place.x <= bounds.maxX && place.y >= bounds.minY && place.y <= bounds.maxY
+}
+
+/**
+ * The rotation clamp (issue #34): a place from the board it was drawn on, moved into a new one. The same
+ * charges `canPlace` reads, so the centre is pulled back inside the region and above the arrow's band. This
+ * is a move rather than a placement: it draws nothing from `Rng`, it keeps the size the balloon was hung
+ * with, and it does not re-run the pair rule, because a balloon she can see is moved by hand.
+ *
+ * Where the board cannot give a balloon its region, the centre is pulled to the edge the board can give,
+ * which is the exposure floor governing that edge - the same answer the responsive board gives on a phone.
+ */
+export function clampToBoard(metrics: BunchMetrics, place: Place): Place {
+  const bounds = centreBounds(metrics, place.size)
+  return {
+    x: Math.min(Math.max(place.x, bounds.minX), bounds.maxX),
+    y: Math.min(Math.max(place.y, bounds.minY), bounds.maxY),
+    size: place.size,
+  }
 }
 
 /** The pair rule: centre-to-centre, measured against the two actual sizes. */

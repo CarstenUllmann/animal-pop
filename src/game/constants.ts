@@ -216,12 +216,6 @@ export const LAYOUT = {
    *  reads it through the placement rule rather than as a band: on the target tablet 50% up the overlay is a
    *  place the rule takes, which is the difference between a percent of the overlay and a place in the board. */
   balloonBandBottomMin: 50,
-  /** `ui/celebration.ts`'s legacy percentages. The bunch is not a band or a spread of the overlay any more,
-   *  so these three are read by the celebration only until issue #34 replaces them with the places
-   *  `ui/bunch.ts` answers. */
-  balloonBandBottomMax: 78,
-  balloonSpreadStart: -8,
-  balloonSpreadEnd: 108,
   /** Device pixel ratio cap (SPEC §5). */
   dprMax: 2,
 } as const

@@ -87,3 +87,18 @@ describe('a party restored after a force-close (SPEC §14.1, issue #15)', () => 
     expect(calls).toHaveLength(2)
   })
 })
+
+describe('the celebration hangs the bunch from the board the game has (issue #34)', () => {
+  it('is handed the board `ui/layout.ts` derives, read as functions so a rotation gives the new one', () => {
+    // The end markers are text beyond the wiring rather than a closing brace: the option values are arrow
+    // functions, and the first `})` after the start would cut the section inside `boardOrigin`.
+    const wiring = between(mainSource, 'const celebration = createCelebration(', '// The overlay measures frames itself')
+    expect(wiring).toContain('metrics: () => bunchMetricsFor(layout.boardPx, layout.balloonPx, layout.arrowBandPx)')
+    expect(wiring).toContain('boardOrigin: () => ({ x: layout.boardOffsetXPx, y: layout.boardOffsetYPx })')
+
+    // The layer reads these on every set and on every re-clamp, so the handler has to apply the new layout
+    // before it tells the layer to resize: a turn mid-party moves the balloons to the board the game has now.
+    const resize = between(mainSource, "window.addEventListener('resize'", 'reportEnvironment()')
+    expect(resize.indexOf('applyLayout(')).toBeLessThan(resize.indexOf('celebration.resize()'))
+  })
+})

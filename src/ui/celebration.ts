@@ -8,6 +8,7 @@ import {
 } from '../game/constants'
 import type { AudioPlayer } from '../audio/player'
 import type { PartyTier, Rng } from '../game/types'
+import { clampToBoard, placeBunch, type BunchMetrics, type Place } from './bunch'
 import { hasMatchMedia } from './capabilities'
 import { createFrameTierMeter, type FrameTier } from './frameTier'
 import { createPool } from './pool'
@@ -42,6 +43,11 @@ const BALLOON_COLORS = ['#ff8fab', '#ffd166', '#7bdff2', '#a0e57c', '#c9a7ff', '
  * dim, and this module's root element is the rect the canvas measures, so that element has to be
  * resized when the tablet turns (issue #19).
  *
+ * Since issue #34 the layer does not decide where the balloons hang: `ui/bunch.ts` answers the places, and
+ * this module hangs them in px against the board rather than as percentages of the overlay, because the
+ * overlay is not the board. A rotation re-clamps what is already hanging - a move, not a new placement, so
+ * no `Rng` is consumed and the rise and the float are not restarted.
+ *
  * Random is allowed here for visual jitter only, never for gameplay, and it comes through the
  * injected `Rng` so a session can be replayed (SPEC §2).
  */
@@ -49,7 +55,9 @@ const BALLOON_COLORS = ['#ff8fab', '#ffd166', '#7bdff2', '#a0e57c', '#c9a7ff', '
 export interface CelebrationLayer {
   start(): void
   stop(): void
-  /** Called on rotation: the canvas is sized from the layer's rect, so a portrait turn has to resize it (SPEC §13, issue #19). */
+  /** Called on rotation: the canvas is sized from the layer's rect, so a portrait turn has to resize it, and
+   *  the balloons already hanging are re-clamped to the new board rather than placed again (SPEC §13, issues
+   *  #19, #34). */
   resize(): void
   /** The tier in effect, which is what the debug overlay reports (issue #18). */
   frameTier(): FrameTier
@@ -75,6 +83,9 @@ interface Particle {
 interface Balloon {
   el: HTMLElement
   popped: boolean
+  /** The place this balloon is hung at, in the board the rule was read against (issue #34). A rotation
+   *  re-clamps this rather than drawing a new one, so the bunch she sees is the bunch the rule answered. */
+  place: Place
   /** Which chime of the set this balloon is, so its sound rises with the set (SPEC §11). */
   chimeIndex: number
 }
@@ -90,6 +101,14 @@ export interface CelebrationOptions {
   onPlayReady?: () => void
   /** Tapping the play arrow. The game decides what "the next level" means (issue #13). */
   onPlay?: () => void
+  /** The board the bunch is placed inside: the painted board, the nominal balloon size on this device, and
+   *  where the play arrow's band begins. Read on each set and on every rotation, so the celebration hangs
+   *  the places `ui/bunch.ts` answers against the board the game has now (issue #34). */
+  metrics: () => BunchMetrics
+  /** The painted board's origin inside the overlay, which is what turns a place into px: a place is a centre
+   *  in the board, and the overlay is not the board, so a percentage of the overlay cannot be a place in it
+   *  (issue #32, SPEC §10.1 *The bunch*). The placement rule never reads these numbers; the paint step does. */
+  boardOrigin: () => { x: number; y: number }
 }
 
 export function createCelebration(
@@ -181,6 +200,18 @@ export function createCelebration(
     const rect = root.getBoundingClientRect()
     canvas.width = Math.round(rect.width * dpr)
     canvas.height = Math.round(rect.height * dpr)
+    // Issue #34: a turn mid-party also moves the balloons that are already hanging. The places the rule
+    // answered are kept - this is a re-clamp, not a new placement, so nothing is drawn from `Rng` again and
+    // the count cannot change with the orientation. `clampToBoard` reads the same charges `canPlace` does,
+    // so a centre a turn puts in the arrow band is pulled up out of it, and one the new board cannot give
+    // its region is pulled in to the edge the board can give.
+    // It is a move: the rise and the float keep their own transform owners and are not restarted, so a
+    // balloon does not climb or swing again on a turn (issue #26).
+    for (const balloon of balloons) {
+      const place = clampToBoard(opts.metrics(), balloon.place)
+      balloon.place = place
+      hangAt(place, balloon.el)
+    }
   }
 
   function setTier(next: FrameTier): void {
@@ -304,22 +335,31 @@ export function createCelebration(
     return Math.min(opts.balloons(), MAX_BALLOONS)
   }
 
-  /** Where along the wider-than-the-board spread this balloon hangs, in `left` percent (issue #25). */
-  function spreadLeft(index: number, size: number): number {
-    const span = LAYOUT.balloonSpreadEnd - LAYOUT.balloonSpreadStart
-    return LAYOUT.balloonSpreadStart + (span * index) / (size - 1)
+  /**
+   * A place becomes CSS (issue #34). The rule measures a centre from the board's left and bottom edges, so
+   * the board's origin inside the overlay is added back and the box is hung around the centre. The size the
+   * rule reserved has to be the size the stylesheet draws, otherwise the float amplitudes the rule charges
+   * are not the amplitudes this box travels - so `--balloon-jitter` carries the place's own size rather than
+   * a draw of its own.
+   */
+  function hangAt(place: Place, el: HTMLElement): void {
+    const board = opts.metrics()
+    const origin = opts.boardOrigin()
+    const halfBoxPx = (place.size * LAYOUT.balloonHeightRatio) / 2
+    el.style.left = `${Math.round(origin.x + place.x - place.size / 2)}px`
+    el.style.bottom = `${Math.round(origin.y + place.y - halfBoxPx)}px`
+    el.style.setProperty('--balloon-jitter', String(place.size / board.balloonPx))
   }
 
-  /** ±5% of the resting band, so the arc is a bunch rather than a curve drawn with a ruler (issue #25). */
-  function bandJitter(): number {
-    const band = LAYOUT.balloonBandBottomMax - LAYOUT.balloonBandBottomMin
-    return (rng.next() * 2 - 1) * band * 0.05
+  /** The bunch for the set this moment, hung at the rung the rule chose (issue #33). The rule answers the
+   *  places inside the board, biggest first, which is also the paint order: back to front. It can answer
+   *  with fewer than the count asked for, because the count is the conservative lattice rather than a cap. */
+  function hangBunch(): void {
+    const places = placeBunch(opts.metrics(), rng, partySize())
+    for (let i = 0; i < places.length; i++) spawnBalloon(places[i] as Place, i)
   }
 
-  function spawnBalloon(index: number): void {
-    const size = partySize()
-    if (balloons.length >= size) return
-
+  function spawnBalloon(place: Place, index: number): void {
     const el = document.createElement('button')
     el.type = 'button'
     el.className = 'balloon'
@@ -339,23 +379,14 @@ export function createCelebration(
     // `fill: currentColor` in the stylesheet needs a colour to inherit (SPEC §10.1).
     const colour = BALLOON_COLORS[index % BALLOON_COLORS.length]
     el.style.color = colour === undefined ? '#ff8fab' : colour
-    // SPEC §10.1: staggered entry, so balloons do not arrive as one flat wall.
+    // SPEC §10.1: staggered entry, so balloons do not arrive as one flat wall. The index is the order the
+    // rule answered in, which is also the paint order: biggest first, so the small balloons are hung in
+    // front of the big ones (issue #33).
     el.style.animationDelay = `${index * CELEBRATION.balloonStaggerMs}ms`
-    // Issue #25: the bunch spreads wider than the board (`left: -8%..108%`), so twelve balloons of this
-    // size overlap and the outermost hang off the edge. A single balloon sits centred.
-    el.style.left = `${size <= 1 ? 50 : spreadLeft(index, size)}%`
-    // Heights follow a gentle arc across the row - outermost lowest, the middle highest - with a
-    // ±5% jitter of the band, so it reads as a bunch rather than a row or a random clump.
-    const arc = Math.sin((Math.PI * (index + 0.5)) / size)
-    const band = LAYOUT.balloonBandBottomMin + (LAYOUT.balloonBandBottomMax - LAYOUT.balloonBandBottomMin) * arc
-    // The jitter stays inside the band: the resting places are 50%-78%, never above the top edge and
-    // never low enough for the arrow's row.
-    const bottom = Math.max(LAYOUT.balloonBandBottomMin, Math.min(LAYOUT.balloonBandBottomMax, band + bandJitter()))
-    el.style.bottom = `${bottom}%`
-    // Each balloon's own size is jittered from the injected Rng, so a session still replays (SPEC §2).
-    // The stylesheet multiplies this by the inherited `--balloon-px`, so a rotation re-sizes the
-    // balloon without the module having to touch it again.
-    el.style.setProperty('--balloon-jitter', String(1 + (rng.next() * 2 - 1) * LAYOUT.balloonSizeJitter))
+    // Issue #34: the position is the place the rule answered, written as px against the board's origin
+    // inside the overlay. The percent band and the wider-than-the-board spread this module used to compute
+    // are gone: they were percentages of the overlay, which is not the board (issue #32).
+    hangAt(place, el)
 
     // Issue #26: the float never stops, including after the arrow appears. The phase and the direction
     // come from the injected Rng, so no two balloons move in lockstep; a negative delay starts the
@@ -367,7 +398,7 @@ export function createCelebration(
 
     root.appendChild(el)
 
-    const balloon: Balloon = { el, popped: false, chimeIndex: index }
+    const balloon: Balloon = { el, popped: false, place, chimeIndex: index }
     balloons.push(balloon)
 
     // SPEC §11: the entry chime rises in pitch with the set.
@@ -398,7 +429,7 @@ export function createCelebration(
 
       for (const entry of balloons) entry.el.remove()
       balloons.length = 0
-      for (let i = 0; i < partySize(); i++) spawnBalloon(i)
+      hangBunch()
     })
   }
 
@@ -436,7 +467,7 @@ export function createCelebration(
       })
     }
 
-    for (let i = 0; i < size; i++) spawnBalloon(i)
+    hangBunch()
 
     // SPEC §10.1 phase 1: the completion cue is the existing fanfare, sized by the party.
     audio.playCompletion(opts.tier())

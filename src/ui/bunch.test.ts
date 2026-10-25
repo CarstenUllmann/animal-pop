@@ -10,6 +10,7 @@ import {
   bunchPlan,
   canPlace,
   canPlaceAt,
+  clampToBoard,
   drawSize,
   placeBunch,
   placeSlot,
@@ -139,6 +140,38 @@ describe('the whole region has to be inside the board, not the centre (issue #33
     expect(topEdge).toBeGreaterThan(small.boardHeightPx - regionFor(small, LAYOUT.balloonPxMin).topY)
     expect(canPlace(small, { x: 75, y: topEdge, size: LAYOUT.balloonPxMin })).toBe(true)
     expect(canPlace(small, { x: 75, y: topEdge + 1, size: LAYOUT.balloonPxMin })).toBe(false)
+  })
+  it('the rotation clamp moves a place into the new board, and draws nothing (issue #34)', () => {
+    // A turn keeps the balloon she is looking at: the clamp applies the same charges `canPlace` reads to the
+    // place the rule answered, so it is a move rather than a placement. It takes no `Rng`, which is why the
+    // size below is the size the balloon was hung with.
+    const place = { x: 200, y: 240, size: TABLET.balloonPx }
+    expect(clampToBoard(TABLET_BOARD, place)).toEqual(place)
+
+    // A centre outside the region is pulled back to the region line, and the clamped place is one the rule
+    // takes: the phone's centre read against the tablet board.
+    const outside = { x: 30, y: 300, size: TABLET.balloonPx }
+    expect(canPlace(TABLET_BOARD, outside)).toBe(false)
+    const moved = clampToBoard(TABLET_BOARD, outside)
+    expect(moved.x).toBe(regionFor(TABLET_BOARD, TABLET.balloonPx).halfX)
+    expect(canPlace(TABLET_BOARD, moved)).toBe(true)
+
+    // A centre inside the arrow band is pulled up to the band line, which is the lowest place the rule
+    // allows: nothing stays on the button she taps to move on (SPEC §10.1, *The arrow*).
+    const inBand = { x: 270, y: regionFor(TABLET_BOARD, TABLET.balloonPx).bottomY - 20, size: TABLET.balloonPx }
+    expect(canPlace(TABLET_BOARD, inBand)).toBe(false)
+    const raised = clampToBoard(TABLET_BOARD, inBand)
+    expect(raised.y).toBe(regionFor(TABLET_BOARD, TABLET.balloonPx).bottomY)
+    expect(canPlace(TABLET_BOARD, raised)).toBe(true)
+
+    // On a board too small to give a balloon its region, the clamp answers with the edge the board can give -
+    // the exposure floor, the same test above builds - rather than with a charge it does not have.
+    const small = { boardWidthPx: 150, boardHeightPx: 170, balloonPx: LAYOUT.balloonPxMin, arrowBandPx: 30 }
+    const floor = LAYOUT.balloonMinExposure * LAYOUT.balloonPxMin
+    const clamped = clampToBoard(small, { x: 1, y: 169, size: LAYOUT.balloonPxMin })
+    expect(clamped.x).toBe(floor)
+    expect(clamped.y).toBe(small.boardHeightPx - floor)
+    expect(canPlace(small, clamped)).toBe(true)
   })
 })
 

@@ -174,7 +174,7 @@ describe('celebration stylesheet', () => {
     // In landscape `.board-area` is the whole 600 CSS px height; `landscapeBoardFraction` sizes the cell inside
     // it, it is not the overlay's own height, which is exactly the confusion a percent band produced.
     const percent = dimensionFor('.balloon', 'bottom', 0)
-    expect(percent).toBe(50)
+    expect(percent).toBe(LAYOUT.balloonBandBottomMin)
     const overlayHeightPx = 600
     const fallbackY = overlayHeightPx * ((percent as number) / 100) - tablet.boardOffsetYPx
     expect(fallbackY).toBe(270)
