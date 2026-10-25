@@ -99,6 +99,9 @@ export function createCelebration(
     if (!running || opts.onPlay === undefined) return
     opts.onPlay()
   })
+  // The arrow has to be in the tree, or the `next--ready` step below reveals an element that is not on
+  // screen: the party would show its balloons and then have no way out of the level (issue #13).
+  row.append(play)
   root.append(row)
 
   let running = false

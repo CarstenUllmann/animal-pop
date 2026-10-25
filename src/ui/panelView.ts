@@ -34,7 +34,12 @@ export function createPanelView(): PanelView {
   const levelLine = document.createElement('p')
   levelLine.className = 'panel__level'
   levelLine.append(label('level', 'panel__level-label'))
-  const levelValue = label('1', 'panel__level-value')
+  const levelValue = label('', 'panel__level-value')
+  // The numeral is its own node because `levelValue` is also where the adult reset appends its confirm
+  // glyph (`mountAdultReset`, SPEC §14.2). Writing the level into `levelValue.textContent` would delete
+  // that glyph on every render, which leaves the long-press with nothing to confirm on.
+  const levelNumber = label('1', 'panel__level-number')
+  levelValue.append(levelNumber)
   levelLine.append(levelValue)
 
   const cards = [goalCard(), goalCard()]
@@ -118,7 +123,7 @@ export function createPanelView(): PanelView {
   }
 
   function render(state: LevelState): void {
-    levelValue.textContent = String(state.level)
+    levelNumber.textContent = String(state.level)
     for (let position = 0; position < cards.length; position++) {
       const card = cards[position]
       const goal = state.goals[position]

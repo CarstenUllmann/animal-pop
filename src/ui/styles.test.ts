@@ -100,6 +100,16 @@ describe('celebration stylesheet', () => {
     expect(css).not.toContain(':has(')
   })
 
+  it('the layer hides itself, so a hidden layer cannot cover the board and swallow every tap', () => {
+    // `[hidden]` and `.celebration` have the same specificity, so whichever rule comes later wins. The
+    // layer sets `display: flex`, which beats the global `[hidden]` rule at the top of the file: the empty
+    // overlay then covers the whole board area as an invisible full-size hit target and nothing is
+    // tappable. The layer therefore has to carry its own hidden rule, after the rule that displays it.
+    expect(ruleFor('.celebration[hidden]')).toContain('display: none')
+    expect(css.indexOf('.celebration[hidden]')).toBeGreaterThan(css.indexOf('.celebration {'))
+    expect(ruleFor('[hidden]')).toContain('display: none')
+  })
+
   it('reduced motion keeps a single frame and shows no confetti (SPEC §13, §14)', () => {
     const media = mediaBlock()
     expect(media).toContain('.balloon')

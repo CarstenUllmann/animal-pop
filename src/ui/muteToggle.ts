@@ -65,6 +65,9 @@ export function mountMuteToggle(mount: HTMLElement, controller: MuteController):
   paint(button, controller)
 
   button.addEventListener('click', () => {
+    // The tap throws the switch first and only then repaints: a handler that only painted would show the
+    // opposite of what the player is doing, and the toggle would do nothing at all (SPEC §11, issue #17).
+    controller.toggle()
     paint(button, controller)
   })
 

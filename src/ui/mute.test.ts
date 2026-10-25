@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { AudioPlayer } from '../audio/player'
 import { createLevel } from '../game/level'
@@ -5,6 +8,9 @@ import { DEFAULT_MUTED, persistMuted, resolveMuted, toggleMuted } from '../game/
 import { readSave, toSaveState, writeSave } from '../game/save'
 import type { KeyValueStore, LevelState, SaveState } from '../game/types'
 import { createMuteController } from './muteToggle'
+
+const SRC = dirname(fileURLToPath(import.meta.url))
+const muteSource = readFileSync(join(SRC, 'muteToggle.ts'), 'utf8')
 
 const POOL = ['cat', 'rabbit', 'panda', 'frog']
 
@@ -185,5 +191,14 @@ describe('mute', () => {
     // Three taps from an unmuted start end muted — the odd count, not a replayed backlog, is what
     // decides the final state.
     expect(controller.muted()).toBe(true)
+  })
+
+  it('the button tap throws the switch, not just the icon (issue #17)', () => {
+    // The controller above is tested directly, so nothing here would catch a button whose handler only
+    // repainted: the icon would flip and the sound would not. Vitest runs in node (vitest.config.ts), so
+    // the shipped handler is read as text.
+    const handler = muteSource.slice(muteSource.indexOf("button.addEventListener('click'"))
+    expect(handler).toContain('controller.toggle()')
+    expect(handler.indexOf('controller.toggle()')).toBeLessThan(handler.indexOf('paint(button, controller)'))
   })
 })

@@ -277,6 +277,15 @@ body {
   background: rgba(9, 12, 24, 0.35);
 }
 
+/* The layer is hidden between levels, but `[hidden]` and `.celebration` have the same specificity, so the
+   `display: flex` above beats the `[hidden]` rule at the top of the file and wins on order. The layer then
+   covers the whole board area - empty, but still a full-size box that takes every pointerdown - so the
+   board is visible and nothing on it is tappable. The layer owns its hidden state instead, which is the one
+   specificity that cannot lose to the rule above. */
+.celebration[hidden] {
+  display: none;
+}
+
 /* Flex `gap` is Chrome 84, so the celebration row spaces its children with margins. */
 .celebration > * + *,
 .goals > * + * {
