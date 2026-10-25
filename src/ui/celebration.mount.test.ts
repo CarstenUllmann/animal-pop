@@ -303,3 +303,35 @@ describe('the bunch replaces itself as she pops, so it never empties (issue #36)
     expect(layer.balloonCount()).toBe(cap)
   })
 })
+
+describe('the party keeps its own count of what she popped (issue #37)', () => {
+  it('counts the pops rather than the size of the set, and starts the next party at zero', async () => {
+    const { layer, root } = mount(2)
+    layer.start()
+    expect(layer.popCount()).toBe(0)
+
+    const first = asElement(balloonsIn(root)[0])
+    first.click()
+    expect(layer.popCount()).toBe(1)
+
+    await wait(CELEBRATION.balloonCollapseMs + 150)
+    // The set is back at the cap, so the row would read 2 again if it reported the set. The counter is what
+    // still says she popped one - which is what the label `balloons popped` claims.
+    expect(balloonsIn(root)).toHaveLength(2)
+    expect(layer.popCount()).toBe(1)
+
+    const second = asElement(balloonsIn(root)[1])
+    second.click()
+    expect(layer.popCount()).toBe(2)
+
+    // A second tap on a balloon that is already collapsing does not count it twice, because the same guard
+    // that stops the pop stops the count.
+    second.click()
+    expect(layer.popCount()).toBe(2)
+
+    // Leaving the party is the end of its count: the number belongs to the party she is in, not to the level
+    // she has moved on from, and a party the launch restored has popped nothing in this run.
+    layer.stop()
+    expect(layer.popCount()).toBe(0)
+  })
+})

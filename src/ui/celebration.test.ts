@@ -175,6 +175,29 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
     expect(pop).not.toContain('animation')
   })
 
+  it('counts the pops the debug row is labelled for, for the party rather than the set (issue #37)', () => {
+    const pop = section('function popBalloon(', 'function spawnBalloon(')
+    const start = section('function start(): void {', 'function stop(): void {')
+    const stop = section('function stop(): void {', 'return {')
+
+    // The row is labelled `balloons popped`, and the set refills as she pops (issue #36), so the size of the
+    // set cannot be what it shows: the two numbers come apart at the first pop. The counter is the party's, so
+    // the party's own two ends are what reset it - opening it and leaving it.
+    expect(source).toContain('popCount(): number')
+    expect(source).toContain('popCount: () => poppedCount')
+    expect(start).toContain('poppedCount = 0')
+    expect(stop).toContain('poppedCount = 0')
+
+    // Counted at the pop rather than at the removal, which is what the label claims: the increment is reached
+    // before the exit is scheduled, so a balloon that never gets removed still counts. The guard in the click
+    // handler is what keeps one balloon from counting twice.
+    expect(pop).toContain('poppedCount += 1')
+    expect(pop.indexOf('poppedCount += 1')).toBeLessThan(pop.indexOf('const exit = ('))
+
+    // The live set is still readable, because it is a different number and the mount tests read it.
+    expect(source).toContain('balloonCount: () => balloons.length')
+  })
+
   it('hangs the bunch through the placement rule, in px against the board rather than as a percent of the overlay (issues #25, #32-#34)', () => {
     const hang = section('function hangAt(', 'function hangBunch(')
     const spawn = section('function spawnBalloon(', 'function start(): void {')

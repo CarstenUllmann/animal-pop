@@ -102,3 +102,28 @@ describe('the celebration hangs the bunch from the board the game has (issue #34
     expect(resize.indexOf('applyLayout(')).toBeLessThan(resize.indexOf('celebration.resize()'))
   })
 })
+
+describe('the row that claims pops gets the pops rather than the size of the set (issue #37)', () => {
+  it('reports the counter the label claims, because the number it used to report refills as she pops', () => {
+    const report = between(mainSource, 'function reportLive(', '}')
+    // `balloons popped` is a count of what she did, and a set that refills (issue #36) cannot show that: the
+    // live size reads 12 -> 11 -> 12, and the row would be wrong from the first pop.
+    expect(report).toContain("debug.set('balloons', numberText(celebration.popCount()))")
+    expect(report).not.toContain('balloonCount()')
+  })
+
+  it('belongs to the party, so the paths that open and leave a party are the paths that reset it', () => {
+    // The tap that earns a party and the launch restoring one both go through `showParty` (SPEC §14.1, issue
+    // #15, the path the restored-party test above reads), so a restored party reports the count it opens with:
+    // nothing has been popped in this run yet.
+    const party = between(mainSource, 'function showParty(', 'function nextLevel(')
+    expect(party).toContain('celebration.start()')
+
+    // `nextLevel()` leaves the party before the next one is opened, so the row cannot read as the total of a
+    // level she has moved on from - and the adult reset is a level change too, so it leaves the party the same
+    // way (SPEC §14.2).
+    const next = between(mainSource, 'function nextLevel(', 'function persistProgress(')
+    expect(next).toContain('celebration.stop()')
+    expect(between(mainSource, 'onReset:', 'void view')).toContain('celebration.stop()')
+  })
+})

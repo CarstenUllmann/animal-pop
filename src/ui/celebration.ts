@@ -63,7 +63,13 @@ export interface CelebrationLayer {
   resize(): void
   /** The tier in effect, which is what the debug overlay reports (issue #18). */
   frameTier(): FrameTier
+  /** The size of the set she is looking at, which shrinks and refills as she pops. The `balloons popped` row
+   *  is not this number: it reads `popCount()` instead, because a set that refills cannot show what she did
+   *  (issue #37). */
   balloonCount(): number
+  /** What the `balloons popped` row reports: the pops this party has earned, reset when a party opens (issue
+   *  #37). */
+  popCount(): number
   particleCount(): number
 }
 
@@ -137,6 +143,12 @@ export function createCelebration(
     color: PARTICLES.whiteColor,
   }))
   const balloons: Balloon[] = []
+
+  // Issue #37: what the `balloons popped` row reports. It is the pops this party has earned, not the size of
+  // the set, because a set that refills as she pops (issue #36) says nothing about what she popped - the two
+  // numbers come apart at the first pop. It counts the pop rather than the removal, because the row is about
+  // what she did, and the double-tap guard means one balloon can only ever contribute one.
+  let poppedCount = 0
 
   // SPEC §10.1 phase 3 (issue #13): the big pulsing ▶ under the balloons. It is in the DOM from the
   // moment the party starts, so it is tappable the instant the fade-in reveals it - the delay is CSS,
@@ -381,6 +393,9 @@ export function createCelebration(
    */
   function popBalloon(balloon: Balloon): void {
     balloon.popped = true
+    // Issue #37: the pop is what the debug row counts, at the moment of the pop rather than at the removal,
+    // and the guard in the click handler means a balloon that is already collapsing cannot count twice.
+    poppedCount += 1
     balloon.el.classList.add('balloon--popped')
     // A party restored after a force-close (SPEC §14.1) opens with no gesture behind it, so the audio
     // context may not exist yet. This tap is the gesture that may create it, exactly as Android requires
@@ -483,6 +498,9 @@ export function createCelebration(
     running = true
     // A party always starts clean: no timer or balloon from a party she left can arrive in this one.
     clearTimers()
+    // Issue #37: the pop counter belongs to the party she is opening, so a party the launch restored starts at
+    // zero as well - she has not popped anything in this run yet (SPEC §14.1).
+    poppedCount = 0
     resize()
     // The first drawn frame has no previous frame to integrate from, even if the last party ran minutes
     // ago, so the burst does not jump by the gap between parties.
@@ -547,6 +565,10 @@ export function createCelebration(
     // element from a party she has left; a balloon that was mid-collapse is taken here instead.
     for (const balloon of balloons) balloon.el.remove()
     balloons.length = 0
+    // Issue #37: the counter is the party's, so a party she has left - by the play arrow, by an adult reset,
+    // or by a force-close - reports nothing until the next one opens. `main.ts` reports the row on the frame
+    // loop, so the row reads 0 rather than the total of a level she is no longer on.
+    poppedCount = 0
     particles.reset()
     if (ctx !== null) ctx.clearRect(0, 0, canvas.width, canvas.height)
     // A fanfare that is still running must not be heard in the next level (SPEC §10.1, issue #14).
@@ -559,6 +581,7 @@ export function createCelebration(
     resize,
     frameTier: () => meter.tier(),
     balloonCount: () => balloons.length,
+    popCount: () => poppedCount,
     particleCount: () => particles.activeCount(),
   }
 }

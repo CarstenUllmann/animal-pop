@@ -438,7 +438,10 @@ function start(root: HTMLElement): void {
 
 /** The frame tier and the live counts only reach the overlay when the game reports them (issue #18). */
 function reportLive(debug: DebugOverlay, celebration: CelebrationLayer): void {
-  debug.set('balloons', numberText(celebration.balloonCount()))
+  // Issue #37: `balloons popped` shows what she did rather than how many balloons are hanging, because the
+  // bunch refills as she pops (issue #36) and the two numbers come apart at the first pop. The row itself, its
+  // label and its place in the roster are issue #18's and are unchanged.
+  debug.set('balloons', numberText(celebration.popCount()))
   debug.set('particles', numberText(celebration.particleCount()))
   debug.set('tier', celebration.frameTier())
 }
