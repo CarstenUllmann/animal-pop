@@ -6,8 +6,9 @@ The design spec is [`docs/SPEC.md`](docs/SPEC.md).
 **Status: M2/M3 — goals, the level ramp, the party and the wiring are in.** M1 (board,
 tap-to-pop, gravity, refill, dead-board reshuffle, synthesised sound) is joined by goals and
 the bubble meter, the celebration with balloons and the play arrow, save/resume, mute, the adult
-long-press reset, the debug overlay, and the portrait and reduced-motion rules. What is left is
-the device checklist (issue #20) and locking the ramp before shipping v1 (issue #22).
+long-press reset, the debug overlay, and the portrait and reduced-motion rules. The ramp is locked
+to `npm run sim` output (issue #22). What is left is the device checklist, the unsupervised
+five-minute session and the v1 tag (issues #20 and #22).
 
 ## Commands
 
@@ -56,7 +57,8 @@ first tap, as Android requires.
 
 `npm run sim` plays levels 1-30 with two policies — `random` (a five-year-old mashing) and
 `greedy` (largest group, preferring goal animals) — 1000 seeded runs each, at seed `0x5eb00b1e`.
-Those are the numbers `LEVEL_RAMP` was chosen against.
+Those are the numbers `LEVEL_RAMP` was chosen against. SPEC §9.1 and §21 quote the same table,
+and `src/game/rampDocs.test.ts` fails if either drifts from the shipped constants.
 
 | Levels | Types | Goals | Rack | `random` p90 pops | `random` p10 left | `greedy` mean share | mean balloons |
 |--------|-------|-------|------|-------------------|-------------------|---------------------|---------------|

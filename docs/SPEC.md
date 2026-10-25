@@ -203,7 +203,9 @@ Difficulty rises only through **more animal types** and **bigger goals**. Never 
 timers, blockers, or hidden rules. It **plateaus** at level 16 so the game never becomes an
 endless grind.
 
-Provisional constants (§21 explains how they were estimated and that M5 replaces them):
+Measured with the §16.2 simulator (`npm run sim`: levels 1–30 × 1000 seeded runs per
+policy at seed `0x5eb00b1e`, recorded in README.md). Rows 1–6 are the deliberate estimates
+explained below; from level 7 every rack is the measurement:
 
 | Levels | Types in play | Goals | Bubbles |
 |--------|---------------|-------|---------|
@@ -218,7 +220,7 @@ Provisional constants (§21 explains how they were estimated and that M5 replace
 Rows 1–2 and 3–6 are the numbers as they were estimated: level 1 is deliberately over-funded
 (~12 bubbles for a ~5-tap level) so her first celebration is a **big** party and she learns that
 the rack is a resource, not a countdown she's losing. From level 3 the slack narrows, and from
-level 7 every rack is the measured number rather than the estimate — the 24 the provisional table in §21 guessed
+level 7 every rack is the measured number rather than the estimate — the 24 the pre-measurement table guessed
 for levels 7–10 is the one number the measurement contradicts, and the plateau measures 35 rather than the
 39 it guessed.
 
@@ -659,10 +661,24 @@ pacing/party slack/sound volume. Ship v1.
 
 ## 20. Open items
 
-- Final ramp numbers (M5, from simulator + one observed session).
-- Whether 5×5 or 6×6 feels better on the device (M1 decision, layout unchanged).
-- Whether to add a 9th animal (no — 8 is already at the edge of silhouette distinctness).
-- Credit/attribution placement for Twemoji (a comment in `animals.ts` is enough for CC BY).
+Settled for v1:
+
+- **Final ramp numbers** — measured and shipped (M5, §9.1, README.md); the simulator run recorded
+  there is the one `LEVEL_RAMP` is asserted against.
+- **5×5 or 6×6** — 6×6 stays. Every measured number in §9.1 and §16.2 is for a 36-cell board, and
+  5×5 would retire that measurement and the 90 CSS px cell §13 sizes the tap target from. How it
+  feels in her hand is still read in the unsupervised session (§18), but the layout decision is
+  closed.
+- **A 9th animal** — no; 8 is already at the edge of silhouette distinctness.
+- **Twemoji credit** — the CC BY 4.0 attribution is a comment in `src/game/animals.ts` and in
+  README.md's Credits, which is what the licence asks for.
+
+Still open:
+
+- **One real unsupervised session** and the device checklist (§16.3, §18) — human/tablet checks,
+  tracked on issues #20 and #22.
+- **Frame rate under a full burst** (issue #12) — measured on the tablet via `?debug=1`, not in a
+  unit test.
 
 ---
 
@@ -676,8 +692,9 @@ export const MAX_BALLOONS = 12
 export const MAX_QUEUED_TAPS = 2
 export const PLATEAU_LEVEL = 16
 
-// provisional until the tuning milestone settles the pacing (issue #22): the first two rows are the
-// estimates below, the rest is simulator output from §16.2
+// measured with `npm run sim` (SPEC §16.2): levels 1-30, 1000 seeded runs per policy, seed
+// 0x5eb00b1e, recorded in README.md. Rows 1-6 are the deliberate estimates; from level 7 every
+// rack is the floor-band sizing rule applied to the measurement (SPEC §9.1)
 export const LEVEL_RAMP = [
   { from: 1,  types: 4, goalEach: 3, bubbles: 12 },  // estimate, deliberately over-funded
   { from: 3,  types: 5, goalEach: 4, bubbles: 16 },  // estimate
@@ -689,11 +706,13 @@ export const LEVEL_RAMP = [
 ]
 ```
 
+`rampDocs.test.ts` parses this block and §9.1's table and fails if either drifts from the shipped
+`LEVEL_RAMP`, so the spec cannot quote numbers the game no longer plays.
+
 **How the first two rows were estimated:** a 6×6 board with *k* types averages
 legal clusters of roughly 2.8 / 2.5 / 2.2 animals for k = 4 / 5 / 6. A *greedy* tap (biggest
 group) yields about 1.4 / 1.0 / 0.73 goal animals; a *random* tap yields roughly 40% less.
 The rack is therefore sized at ≈1.15× the estimated **random-play** tap count, which puts a
 careless player near the floor and a careful player around half the rack. These were
 **estimates, not measurements** for the rows the rule produced; the §16.2 simulator replaced them from
-level 7, and only the calibration
-target (§9.1) is binding.
+level 7, and only the calibration target (§9.1) is binding.
