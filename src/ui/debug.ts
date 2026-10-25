@@ -192,8 +192,11 @@ export function errorText(message: string): string {
   return message === '' ? 'none' : message
 }
 
+/** The rolling window the fps row averages over, in ms. */
+export const FPS_WINDOW_MS = 300
+
 export function updateFps(now: number, samples: number[]): string {
-  const window = 300
+  const window = FPS_WINDOW_MS
   const recent = samples.filter((sample) => now - sample <= window)
   if (recent.length < 2) return 'no readings yet'
 
@@ -204,6 +207,23 @@ export function updateFps(now: number, samples: number[]): string {
   const span = last - first
   if (span <= 0) return 'no readings yet'
   return ((recent.length - 1) / (span / 1000)).toFixed(1)
+}
+
+/**
+ * Record one animation frame and return the rolling rate. `measureFps` used to pass
+ * `samples.concat([now])` and never store the sample, so the history stayed empty and the row read
+ * "no readings yet" for the whole session - the one number #12's device check needs. The samples live
+ * here, pruned to what the window can still use, so a party that idles for an hour cannot grow it.
+ */
+export function recordFps(now: number, samples: number[]): string {
+  samples.push(now)
+
+  const oldest = now - FPS_WINDOW_MS
+  let expired = 0
+  while (expired < samples.length && (samples[expired] as number) < oldest) expired += 1
+  if (expired > 0) samples.splice(0, expired)
+
+  return updateFps(now, samples)
 }
 
 /**
@@ -316,7 +336,7 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo): DebugOver
   // FPS is measured by the renderer, so the overlay keeps its own samples and reports them
   // through `set` like every other row does.
   const samples: number[] = []
-  const measureFps = (now: number): string => set('fps', updateFps(now, samples.concat([now])))
+  const measureFps = (now: number): string => set('fps', recordFps(now, samples))
 
   return {
     element: panel,

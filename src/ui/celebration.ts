@@ -2,7 +2,10 @@ import { CELEBRATION, LAYOUT, MAX_BALLOONS, PARTICLES } from '../game/constants'
 import type { AudioPlayer } from '../audio/player'
 import type { PartyTier, Rng } from '../game/types'
 import { hasMatchMedia } from './capabilities'
+import { createFrameTierMeter, type FrameTier } from './frameTier'
 import { createPool } from './pool'
+
+export type { FrameTier } from './frameTier'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -16,9 +19,10 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  * This is the only particle system in the game. Density is capped by `PARTICLES` and the burst
  * objects come from `ui/pool.ts`, which never grows past its capacity, so a burst cannot make the
  * old WebView stutter (SPEC §5). When frames run over budget for `degradeAfterMs` the layer drops
- * to the 30fps tier for good, and comes back after `recoverAfterMs` of frames inside the budget: one
- * bad stretch on the tablet would otherwise be the tier for the rest of the session (issue #12). That
- * tier only reaches CSS when this module writes `data-tier`.
+ * to the 30fps tier, and comes back after `recoverAfterMs` of frames inside the budget: one bad
+ * stretch on the tablet would otherwise be the tier for the rest of the session (issue #12). That
+ * decision is `ui/frameTier.ts`, where the measurement and the recovery are testable; this module
+ * only applies it.
  *
  * The layer is an overlay over the board rather than a band below it: the board stays visible under the
  * dim, and this module's root element is the rect the canvas measures, so that element has to be
@@ -27,8 +31,6 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  * Random is allowed here for visual jitter only, never for gameplay, and it comes through the
  * injected `Rng` so a session can be replayed (SPEC §2).
  */
-
-export type FrameTier = '60fps' | '30fps'
 
 export interface CelebrationLayer {
   start(): void
@@ -106,7 +108,8 @@ export function createCelebration(
 
   let running = false
   let raf = 0
-  let lastFrame = 0
+  /** When the last drawn frame started, so `dt` is the time between drawn frames, not the ticks. */
+  let drawnAt = 0
   let frameCount = 0
   /**
    * Every pending timer this layer owns: the staggered balloon chimes, the play-arrow reveal and the
@@ -114,12 +117,11 @@ export function createCelebration(
    * one and an idle layer owns nothing (SPEC §10.1, issue #12).
    */
   const timers: number[] = []
-  // The tier is decided by the time the layer itself spends on a frame, not by the wall-clock gap
-  // between frames, because the 30fps tier deliberately delivers every other frame (issue #12).
-  let lateMs = 0
-  let onTimeMs = 0
-  let skipFrame = false
-  let tier: FrameTier = '60fps'
+  // The tier decision lives in `ui/frameTier.ts`; the meter is fed every animation frame and also owns
+  // the 30fps throttle. `shownTier` is only what has reached the DOM, so `data-tier` is written when it
+  // changes rather than on every frame.
+  const meter = createFrameTierMeter()
+  let shownTier: FrameTier = '60fps'
 
   function later(ms: number, run: () => void): void {
     // Only pending timers are kept: a party that is left open respawns a set of balloons every time she
@@ -149,9 +151,9 @@ export function createCelebration(
   }
 
   function setTier(next: FrameTier): void {
-    if (next === tier) return
-    tier = next
-    root.dataset.tier = tier
+    if (next === shownTier) return
+    shownTier = next
+    root.dataset.tier = shownTier
   }
 
   /**
@@ -161,7 +163,7 @@ export function createCelebration(
    */
   function spawnBurst(x: number, y: number): void {
     if (reducedMotion) return
-    const perBurst = tier === '30fps' ? PARTICLES.degradePerBurst : PARTICLES.perBurst
+    const perBurst = meter.tier() === '30fps' ? PARTICLES.degradePerBurst : PARTICLES.perBurst
     for (let i = 0; i < perBurst; i++) {
       const particle = particles.acquire()
       if (particle === null) break
@@ -180,21 +182,18 @@ export function createCelebration(
     if (!running || ctx === null) return
 
     const now = performance.now()
-    const dt = lastFrame === 0 ? 0 : (now - lastFrame) / 1000
-    lastFrame = now
-
-    // The 30fps tier is an actual throttle, not just a smaller burst: every other frame is skipped, so
-    // the scene updates at 30fps instead of running 60fps draws that the tablet cannot afford (issue #12).
-    if (tier === '30fps') {
-      if (!skipFrame) {
-        skipFrame = true
-        raf = window.requestAnimationFrame(draw)
-        return
-      }
-      skipFrame = false
+    // SPEC §10.2 (issue #12): the meter reads the browser's real frame interval and owns the 30fps
+    // throttle. A tick it says not to draw is scheduled straight to the next frame: the scene updates at
+    // 30fps instead of running 60fps draws the tablet cannot afford.
+    const tick = meter.tick(now)
+    setTier(tick.tier)
+    if (!tick.draw) {
+      raf = window.requestAnimationFrame(draw)
+      return
     }
 
-    const workStart = performance.now()
+    const dt = drawnAt === 0 ? 0 : (now - drawnAt) / 1000
+    drawnAt = now
 
     const active = particles.active()
     for (const particle of active) {
@@ -225,20 +224,6 @@ export function createCelebration(
       ctx.fill()
     }
     ctx.restore()
-
-    // The tier is measured on the work this layer does, so a skipped frame cannot make it look late.
-    const workMs = performance.now() - workStart
-    if (workMs > PARTICLES.frameBudgetMs) {
-      lateMs += workMs
-      onTimeMs = 0
-      if (tier === '60fps' && lateMs >= PARTICLES.degradeAfterMs) setTier('30fps')
-    } else {
-      onTimeMs += workMs
-      lateMs = 0
-      // SPEC §10.2 only says the layer drops, so without this the degrade is a ratchet: one bad stretch
-      // on the tablet would be the tier for the rest of the session (issue #12).
-      if (tier === '30fps' && onTimeMs >= PARTICLES.recoverAfterMs) setTier('60fps')
-    }
 
     raf = window.requestAnimationFrame(draw)
   }
@@ -303,6 +288,9 @@ export function createCelebration(
     // A party always starts clean: no timer or balloon from a party she left can arrive in this one.
     clearTimers()
     resize()
+    // The first drawn frame has no previous frame to integrate from, even if the last party ran minutes
+    // ago, so the burst does not jump by the gap between parties.
+    drawnAt = 0
 
     if (!reducedMotion) {
       draw()
@@ -357,7 +345,7 @@ export function createCelebration(
     start,
     stop,
     resize,
-    frameTier: () => tier,
+    frameTier: () => meter.tier(),
     balloonCount: () => balloons.length,
     particleCount: () => particles.activeCount(),
   }

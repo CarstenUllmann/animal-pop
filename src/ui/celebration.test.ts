@@ -53,4 +53,15 @@ describe('celebration module (issues #12 and #13)', () => {
     expect(later).toContain('timers.splice(at, 1)')
     expect(later).toContain('timers.push(id)')
   })
+
+  it('times the browser\'s frames, not its own draw work, so the 30fps tier can actually fire', () => {
+    // SPEC §10.2's budget is frame time. Timing this layer's own `draw()` (a few hundred arcs) always
+    // reads healthy even while the screen runs at 25fps, so the degrade could never happen on the
+    // tablet and #12's "observable and reversible" was only half true.
+    const draw = section('function draw(): void {', '/** The number of balloons')
+    expect(draw).toContain('meter.tick(now)')
+    expect(draw).toContain('setTier(tick.tier)')
+    expect(draw).not.toContain('workStart')
+    expect(source).toContain('createFrameTierMeter()')
+  })
 })

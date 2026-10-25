@@ -213,6 +213,18 @@ export const PARTICLES = {
   ambientFrames: 90,
   /** 60fps budget; over it for `degradeAfterMs` drops the celebration to 30fps. */
   frameBudgetMs: 16.7,
+  /**
+   * What counts as over budget. A healthy 60Hz panel delivers frames a little unevenly (roughly
+   * 16.6-17.2ms), so charging the bare 16.7ms would make a perfect tablet degrade itself. 1.5x is
+   * about 25ms: below 40fps, and above anything a 60Hz panel does without being late.
+   */
+  lateFrameFactor: 1.5,
+  /**
+   * A gap this long is not a slow frame but a pause: the tab was hidden, the device slept, or the main
+   * thread was blocked outside this layer. The meter starts a fresh window instead of charging it to
+   * the tier (issue #12).
+   */
+  stallMs: 250,
   degradeAfterMs: 1000,
   /**
    * A tier this long inside the budget brings the 60fps tier back (issue #12). §10.2 only says the

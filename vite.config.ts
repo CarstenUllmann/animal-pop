@@ -16,7 +16,8 @@ export default defineConfig({
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
   build: {
-    // Both targets together: es2022 caps the syntax, chrome138 covers the engine.
+    // es2017 caps the syntax and chrome61 is the engine the installed app actually gets, so the
+    // bundle can parse there (SPEC §2). The tablet's browser is newer; the WebView is not.
     target: BUILD_TARGETS,
     cssTarget: CHROME_TARGET,
   },

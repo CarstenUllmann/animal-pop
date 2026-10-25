@@ -99,6 +99,14 @@ export function createPanelView(): PanelView {
 
   /** The rack shows the level's whole starting size, so a spent bubble is a gap she can see. */
   function renderRack(state: LevelState): void {
+    // The rack is the level's starting size, and a reset can take her from a late level's 35 back to
+    // level 1's 12. Slots are removed as well as added: keeping the old ones would paint a 35-slot rack
+    // with twenty-three gaps - and, on the first render, a sparkle on every one of them - while the save
+    // says the level has twelve bubbles (SPEC §8.2, §14.2, issue #16).
+    while (bubbles.length > state.bubblesStart) {
+      const bubble = bubbles.pop()
+      if (bubble !== undefined) bubble.remove()
+    }
     while (bubbles.length < state.bubblesStart) {
       const bubble = document.createElement('span')
       bubble.className = 'rack__bubble'

@@ -17,6 +17,7 @@ import {
   isDebugRow,
   nextLevelClick,
   parseDebugFlag,
+  recordFps,
   rowText,
   updateFps,
 } from './debug'
@@ -266,6 +267,37 @@ describe('debug rows', () => {
     expect(updateFps(1000, [700, 850, 1000])).toBe('6.7')
     // A sample just outside the window is not a sample.
     expect(updateFps(1000, [699, 1000])).toBe('no readings yet')
+  })
+
+  it('records the frames it is given, so the fps row is not dead on the tablet (issue #12)', () => {
+    // `measureFps` used to pass `samples.concat([now])` without storing the sample, so the history stayed
+    // empty and the row read "no readings yet" for the whole session - the one number the device check
+    // exists to read.
+    const samples: number[] = []
+    expect(recordFps(1000, samples)).toBe('no readings yet')
+    expect(samples).toEqual([1000])
+
+    // 60Hz: one sample every 16.7ms. The rate has to read as a rate, not as one lone sample.
+    let now = 1000
+    for (let i = 0; i < 10; i++) {
+      now += 16.7
+      recordFps(now, samples)
+    }
+    now += 16.7
+    expect(recordFps(now, samples)).toBe('59.9')
+    // Only the rolling window is kept, so an hour-long party cannot grow the array without bound.
+    expect(samples.length).toBeLessThan(25)
+  })
+
+  it('starts a fresh window after a pause instead of averaging across it', () => {
+    const samples: number[] = []
+    recordFps(1000, samples)
+    recordFps(1016.7, samples)
+    // A hidden tab produces no frames; the next one must not be averaged as if 60 seconds had passed
+    // between two 60Hz frames.
+    expect(recordFps(61000, samples)).toBe('no readings yet')
+    expect(samples).toEqual([61000])
+    expect(recordFps(61016.7, samples)).toBe('59.9')
   })
 })
 

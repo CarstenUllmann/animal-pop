@@ -293,6 +293,16 @@ board; the board itself dims and stops accepting taps (except balloon taps).
 Fireworks: max 120 particles per burst, pooled, DPR capped at 2. Must hold 60fps on the
 target device; degrade particle count (`30fps` tier) if frame time exceeds budget for 1s.
 
+"Frame time" is the interval the browser actually delivers between animation frames, not the time the
+celebration spends drawing: on the tablet the compositor and the rest of the page are what make a frame
+late, and a layer timing only its own arcs reports healthy while the screen runs at 25fps. Because the
+30fps tier throttles draws to every other frame, the meter normalises by the animation frames in its
+window: a panel still delivering 60Hz reads 16.7ms even while the throttle is on, and one that has fallen
+to 30Hz reads 33ms and stays degraded. It returns to 60fps after `recoverAfterMs` inside the budget. A
+hidden tab or a sleeping device resets the window instead of being charged as a slow frame. The tier is
+observable as `data-tier` and in `?debug=1`'s frame-tier row, which is how issue #12's device check reads
+it.
+
 ---
 
 ## 11. Audio

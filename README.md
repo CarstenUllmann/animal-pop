@@ -28,7 +28,8 @@ Pushes to `main` build and deploy to GitHub Pages via
 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). The app is served from
 <https://carstenullmann.github.io/animal-pop/>.
 
-The build targets Chrome 138 / `es2022` (the last Chrome available on the target tablet). No CDN,
+The build targets `es2017` / `chrome61`, the engine the installed app actually gets (the tablet's
+browser is Chrome 138; SPEC §2 explains why those are two different engines). No CDN,
 no web fonts, no runtime network requests: everything is bundled and the service worker precaches
 the whole app.
 
@@ -88,6 +89,9 @@ Open `?debug=1` (for example
 <https://carstenullmann.github.io/animal-pop/?debug=1>) to show the on-device debug overlay. It
 reports the session seed, the animals in play, the rack, the goals still missing, the tap queue,
 the live balloon and particle counts, the frame tier, FPS, the viewport and the boot trace. The
+`fps` row averages the frames the browser actually delivers, and the frame tier is the celebration's
+own degrade/recover decision, measured on those same intervals — that is what issues #12 and #20
+record on the tablet. The
 boot trace is the reason it matters on the tablet: a force-close leaves nothing but the persisted
 trace, and the browser and the installed app share one Chrome profile, so `?debug=1` in the
 browser shows what the standalone run recorded (issue #23).

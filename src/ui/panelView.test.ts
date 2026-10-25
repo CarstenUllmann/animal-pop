@@ -13,6 +13,13 @@ const SRC = dirname(fileURLToPath(import.meta.url))
 const panelSource = readFileSync(join(SRC, 'panelView.ts'), 'utf8')
 const mainSource = readFileSync(join(SRC, '..', 'main.ts'), 'utf8')
 
+function section(start: string, end: string): string {
+  const from = panelSource.indexOf(start)
+  if (from === -1) return ''
+  const to = panelSource.indexOf(end, from + start.length)
+  return to === -1 ? panelSource.slice(from) : panelSource.slice(from, to)
+}
+
 describe('the level label (SPEC §13, §14.2, issue #16)', () => {
   it('keeps the numeral in its own node, so a render cannot delete the adult confirm glyph', () => {
     // `mountAdultReset` appends the confirm glyph to `PanelView.levelElement`, which is the same
@@ -26,5 +33,20 @@ describe('the level label (SPEC §13, §14.2, issue #16)', () => {
     expect(panelSource).not.toMatch(/levelValue\.textContent\s*=/)
     // The wiring the coupling depends on: the reset is mounted on the element the panel exposes.
     expect(mainSource).toContain('mountAdultReset(panel.levelElement')
+  })
+})
+
+describe('the bubble rack (SPEC §8.2, §14.2, issue #16)', () => {
+  it('removes slots when a reset takes her from a late level back to level 1', () => {
+    // The panel is never rebuilt, and the rack grows with the ramp: a reset from level 16 (35) to level 1
+    // (12) used to leave the old 35 slots behind, showing a 12-bubble level as twenty-three gaps and
+    // sparking every one of them on the first render. The rack is the level's starting size, so it has to
+    // shrink as well as grow.
+    const rack = section('function renderRack', 'function render(')
+    expect(rack).toContain('while (bubbles.length > state.bubblesStart)')
+    expect(rack).toContain('bubble.remove()')
+    expect(rack.indexOf('while (bubbles.length > state.bubblesStart)')).toBeLessThan(
+      rack.indexOf('while (bubbles.length < state.bubblesStart)'),
+    )
   })
 })
