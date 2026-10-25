@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LAYOUT } from '../game/constants'
+import { CELEBRATION, LAYOUT } from '../game/constants'
 import { computeLayout } from './layout'
 
 /**
@@ -41,21 +41,22 @@ describe('layout on the target tablet (SPEC §13)', () => {
     expect(metrics.levelPx).toBeGreaterThanOrEqual(metrics.goalPx)
   })
 
-  it('sizes the party balloon from the measured board area, never below 80px (issue #25)', () => {
+  it('sizes the party balloon from the measured board area, never below 120px (issues #25, #32)', () => {
     const landscape = computeLayout(TABLET, GRID)
-    // min(board area 717 x 0.13, board area 600 x 0.15) = 90 CSS px, about twice the old 44px and
-    // comfortably past the 80px floor. The grilling's "~112px" assumed a larger board box than the
-    // target tablet has; the formula is the contract, and 90 is what 1024x600 produces.
-    expect(landscape.balloonPx).toBe(90)
+    // The factors are 1.5x the ones #25 measured: min(717 x 0.195, 600 x 0.225) = 135 CSS px, which is
+    // 1.5x the 90 px those factors gave on the same device.
+    expect(landscape.balloonPx).toBe(135)
+    expect(landscape.balloonPx).toBe(1.5 * 90)
     expect(landscape.balloonPx).toBeGreaterThanOrEqual(LAYOUT.balloonPxMin)
-    expect(landscape.balloonPx).toBeGreaterThan(44 * 1.5)
-    // The smallest balloon the ±6% jitter can produce still clears the 80px tap target.
-    expect(landscape.balloonPx * (1 - LAYOUT.balloonSizeJitter)).toBeGreaterThanOrEqual(LAYOUT.balloonPxMin)
 
-    // The floor is what keeps the balloon a legal tap target on a small window: 80px after the -6%
-    // jitter, so the base is 86px. In portrait the board area is narrower, so the floor takes over.
-    expect(computeLayout({ width: 480, height: 320 }, GRID).balloonPx).toBe(86)
-    expect(computeLayout({ width: 600, height: 1024 }, GRID).balloonPx).toBe(86)
+    // The floor is 120 px *after* the -6% jitter has been applied, so the base is 128 px: the smallest
+    // balloon the jitter can draw is 120.3, still past the 90 CSS px tap target. On a phone, where the
+    // factors give 66 px, the floor is what the bunch is drawn at - a bunch, not fingertip balloons.
+    const phone = computeLayout({ width: 480, height: 320 }, GRID)
+    expect(phone.balloonPx).toBe(Math.ceil(LAYOUT.balloonPxMin / (1 - LAYOUT.balloonSizeJitter)))
+    expect(phone.balloonPx * (1 - LAYOUT.balloonSizeJitter)).toBeGreaterThanOrEqual(LAYOUT.balloonPxMin)
+    expect(phone.balloonPx * (1 - LAYOUT.balloonSizeJitter)).toBeGreaterThanOrEqual(LAYOUT.tapTargetCssPx)
+    expect(computeLayout({ width: 600, height: 1024 }, GRID).balloonPx).toBe(128)
 
     // A bigger board gets a bigger balloon: the size is derived, not fixed.
     const desktop = computeLayout({ width: 1920, height: 1080 }, GRID)
@@ -229,6 +230,80 @@ describe('the board is the dominant half (SPEC §13, issue #10)', () => {
 
     // The board is centred inside its area, so what the cell does not use is the margin §13 asks for.
     expect(TABLET.height - metrics.boardPx).toBeGreaterThanOrEqual(2 * LAYOUT.chrome.boardAreaPaddingPx)
+  })
+})
+
+describe('the bunch geometry layout owns (SPEC §10.1, issue #32)', () => {
+  it('reports the board\'s offset inside the overlay, not the overlay\'s size', () => {
+    // `.board-area` centres the board inside its padding box, and the celebration overlay *is* that padding
+    // box, so a place inside the board is not a place inside the overlay. On the target tablet the board
+    // starts 16 px of padding plus half the 145 px of horizontal slack the cell does not use.
+    const metrics = computeLayout(TABLET, GRID)
+    expect(metrics.boardOffsetXPx).toBe(89)
+    expect(metrics.boardOffsetYPx).toBe(30)
+
+    // The two offsets are the slack shared between the two sides, so the board is inside the overlay at both
+    // ends rather than flush against one: the padding plus half the slack inside the content box, which is a
+    // half pixel on the tablet and therefore rounded - so the check is within the rounding it is allowed.
+    const slackX = Math.round(TABLET.width * (1 - LAYOUT.panelWidthFraction)) - 2 * LAYOUT.chrome.boardAreaPaddingPx - metrics.boardPx
+    const slackY = TABLET.height - 2 * LAYOUT.chrome.boardAreaPaddingPx - metrics.boardPx
+    expect(Math.abs(2 * (metrics.boardOffsetXPx - LAYOUT.chrome.boardAreaPaddingPx) - slackX)).toBeLessThanOrEqual(1)
+    expect(Math.abs(2 * (metrics.boardOffsetYPx - LAYOUT.chrome.boardAreaPaddingPx) - slackY)).toBeLessThanOrEqual(1)
+
+    // The same measurement on a portrait turn, where the board is 558 px inside a 600 px row.
+    const portrait = computeLayout({ width: 600, height: 1024 }, GRID)
+    expect(portrait.boardOffsetXPx).toBe(21)
+    expect(portrait.boardOffsetYPx).toBe(18)
+  })
+
+  it('keeps the arrow\'s band inside the offsets, from the same margin constant', () => {
+    // The band is `.celebration`'s `padding-bottom` (4% of the overlay's width), plus the arrow's own box,
+    // plus the same `balloonMarginPx` the balloon keep-out uses - there is no second spacing constant for it.
+    const metrics = computeLayout(TABLET, GRID)
+    const bandPx = Math.ceil((LAYOUT.celebrationBottomPaddingPct / 100) * Math.round(TABLET.width * (1 - LAYOUT.panelWidthFraction)))
+    expect(LAYOUT.celebrationBottomPaddingPct).toBe(4)
+    expect(bandPx).toBe(29)
+    expect(metrics.arrowBandPx - metrics.playPx - LAYOUT.balloonMarginPx).toBe(Math.max(0, bandPx - metrics.boardOffsetYPx))
+    // On the tablet the band is shallower than the board's offset, so the arrow sits below the board's
+    // bottom edge and the band contributes nothing: the no-go line is the arrow box plus the margin. The
+    // arrow cannot be smaller than the tap target, so `playPx` is 90 here even though the cell is 90.
+    expect(metrics.arrowBandPx).toBe(106)
+
+    // On a phone the board is clamped past its area, so the offset is 0 and the band is measured whole:
+    // 14 px of padding, the 90 px tap target the arrow cannot be smaller than, and the same 16 px.
+    const phone = computeLayout({ width: 480, height: 320 }, GRID)
+    expect(phone.boardOffsetYPx).toBe(0)
+    expect(phone.arrowBandPx).toBe(120)
+  })
+
+  it('holds twelve balloons at the target spacing on the tablet and reports the phone as not holding them', () => {
+    // The fit is the worst-case lattice the placement rule samples inside: at 55% of the largest jittered
+    // balloon, the tablet has five lattice columns and five rows - twenty centres for twelve balloons - while
+    // a phone has three by three, which is what makes the count drop there rather than the size (issue #33).
+    const tablet = computeLayout(TABLET, GRID)
+    expect(tablet.bunchFitsBoard).toBe(true)
+    const phone = computeLayout({ width: 480, height: 320 }, GRID)
+    expect(phone.bunchFitsBoard).toBe(false)
+
+    // A portrait turn keeps the fit: the board is 558 px, so the lattice is six by five.
+    expect(computeLayout({ width: 600, height: 1024 }, GRID).bunchFitsBoard).toBe(true)
+
+    // The keep-out is what makes the two disagree, so it is asserted as numbers rather than as a claim:
+    // half the largest jittered balloon, the float amplitude, and `balloonMarginPx` on each side.
+    const jitterMax = 1 + LAYOUT.balloonSizeJitter
+    const halfMaxPx = (tablet.balloonPx * jitterMax) / 2
+    expect(halfMaxPx + CELEBRATION.balloonSwayPx + LAYOUT.balloonMarginPx).toBeCloseTo(94.55, 2)
+    const usableWidthPx = tablet.boardPx - 2 * (halfMaxPx + CELEBRATION.balloonSwayPx + LAYOUT.balloonMarginPx)
+    const usableHeightPx = tablet.boardPx - (halfMaxPx + CELEBRATION.balloonBobPx + LAYOUT.balloonMarginPx) - tablet.arrowBandPx
+    const latticeCellPx = LAYOUT.balloonSpacingFactor * tablet.balloonPx * jitterMax
+    expect(Math.floor(usableWidthPx / latticeCellPx) + 1).toBe(5)
+    expect(Math.floor(usableHeightPx / latticeCellPx) + 1).toBe(5)
+
+    // And the ladder's order is what the criterion reads: size holds first (the phone is at the floor),
+    // spacing tightens before the count, and the count only drops when the floor rung cannot hold the set.
+    expect(phone.balloonPx).toBe(Math.ceil(LAYOUT.balloonPxMin / (1 - LAYOUT.balloonSizeJitter)))
+    expect(LAYOUT.balloonSpacingFactor).toBe(0.55)
+    expect(LAYOUT.balloonMinExposure).toBeLessThan(LAYOUT.balloonSpacingFactor)
   })
 })
 

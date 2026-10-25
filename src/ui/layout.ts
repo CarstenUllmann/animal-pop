@@ -1,4 +1,4 @@
-import { FONTS, LAYOUT } from '../game/constants'
+import { CELEBRATION, FONTS, LAYOUT, MAX_BALLOONS } from '../game/constants'
 
 export interface Viewport {
   width: number
@@ -31,8 +31,25 @@ export interface LayoutMetrics {
   rackColumns: number
   /** The play arrow, which is a tap target (SPEC §10.1, §13). */
   playPx: number
-  /** The party balloon size, from the measured board area, floored so every jittered balloon clears 80px (SPEC §10.1, issue #25). */
+  /** The party balloon size, from the measured board area, floored so every jittered balloon clears the floor (SPEC §10.1, issue #25). */
   balloonPx: number
+  /**
+   * Issue #32: the painted board's offset inside the overlay, not the overlay's size. The celebration is
+   * `.board-area`'s padding box and the board is centred inside it, so "a position inside the board" cannot
+   * be read as a percentage of the overlay - on the target tablet the board starts 89 CSS px across and
+   * 30 CSS px up from the overlay's origin. `ui/bunch.ts` places centres against these, and the celebration
+   * turns a place into inline px by adding them back.
+   */
+  boardOffsetXPx: number
+  boardOffsetYPx: number
+  /**
+   * The top of the play arrow's no-go band, measured up from the board's bottom edge: the padding band the
+   * arrow sits in, the arrow's own box, and `balloonMarginPx` clear of it (SPEC §10.1, *The arrow*). It is
+   * the number the placement rule refuses, so a balloon can never land on the button she uses to move on.
+   */
+  arrowBandPx: number
+  /** Whether `MAX_BALLOONS` fit at the target spacing inside the keep-out. Reported the way `boardFitsArea` is. */
+  bunchFitsBoard: boolean
   /** The box reserved for every interactive element no larger than this (SPEC §13). */
   interactivePx: number
   /** Portrait layout: the panel stacks above the board. */
@@ -104,6 +121,7 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   const bubblePx = between(Math.round(cell * 0.26), LAYOUT.bubblePxMin, LAYOUT.bubblePxMax)
   const goalPx = between(Math.round(cell * 0.33), 28, FONTS.goalPx)
   const levelPx = between(Math.round(cell * 0.46), FONTS.levelPx, 56)
+  const playPx = between(Math.round(cell * 0.90), LAYOUT.tapTargetCssPx, LAYOUT.cellMaxPx)
 
   // Issue #10: the fit is measured against the panel and board areas the fractions give, using the chrome
   // the stylesheet actually reserves (LAYOUT.chrome mirrors it), so a rack that fits here fits on screen.
@@ -125,13 +143,34 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   const rackRowsFit = Math.max(0, Math.floor((panelContentPx - panelChromePx - 2 * LAYOUT.chrome.rackPaddingPx) / rackRowPx))
   const boardPx = cell * Math.max(grid.rows, grid.cols)
   // Issue #25: the balloon is the payoff, so it is sized from the board area it hangs over rather than
-  // from a fixed 44px. The floor is the 80px tap target *after* the per-balloon -6% jitter has been
-  // applied, so no balloon in the bunch can fall under 80px; on the target tablet the factors give 90px
-  // (min(717 x 0.13, 600 x 0.15)), about twice the old size.
+  // from a fixed 44px. Issue #32 raises the factors to 1.5x and the floor to 120 CSS px, which is the tap
+  // target *after* the per-balloon -6% jitter has been applied: a jittered balloon can never fall under
+  // 113 px, so a small board still shows a bunch rather than fingertip balloons. On the target tablet the
+  // factors give 135 px (min(717 x 0.195, 600 x 0.225)).
   const balloonFloorPx = Math.ceil(LAYOUT.balloonPxMin / (1 - LAYOUT.balloonSizeJitter))
   const balloonPx = Math.max(
     balloonFloorPx,
     Math.round(Math.min(boardAreaWidthPx * LAYOUT.balloonWidthFactor, boardAreaHeightPx * LAYOUT.balloonHeightFactor)),
+  )
+
+  // Issue #32 (SPEC §10.1, *The bunch*): the overlay the celebration builds is `.board-area`'s padding box,
+  // and the board is centred inside that box, so the board is not at the overlay's origin. The offset is the
+  // padding plus half the slack the cell does not use; where the cell is clamped past the area (`cellMinPx`
+  // on a phone) the board overhangs and the offset is the side it is read from, never a negative one.
+  const contentWidthPx = boardAreaWidthPx - boardPaddingPx
+  const contentHeightPx = boardAreaHeightPx - boardPaddingPx
+  const boardOffsetXPx = Math.max(0, Math.round(LAYOUT.chrome.boardAreaPaddingPx + (contentWidthPx - boardPx) / 2))
+  const boardOffsetYPx = Math.max(0, Math.round(LAYOUT.chrome.boardAreaPaddingPx + (contentHeightPx - boardPx) / 2))
+
+  // The arrow's band: `.celebration`'s `padding-bottom` resolves against the overlay's width, the arrow box
+  // is `playPx` tall inside it, and the same `balloonMarginPx` keeps the blob off the button. Read from the
+  // board's bottom edge, which is where `ui/bunch.ts` refuses a centre. When the band is shallower than the
+  // board's offset the arrow is below the board's edge, so the band contributes nothing there.
+  const arrowBandPx = arrowBandTopPx(
+    Math.ceil((LAYOUT.celebrationBottomPaddingPct / 100) * boardAreaWidthPx),
+    boardOffsetYPx,
+    playPx,
+    LAYOUT.balloonMarginPx,
   )
 
   return {
@@ -143,8 +182,17 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     goalPx,
     bubblePx,
     rackColumns,
-    playPx: between(Math.round(cell * 0.90), LAYOUT.tapTargetCssPx, LAYOUT.cellMaxPx),
+    playPx,
     balloonPx,
+    boardOffsetXPx,
+    boardOffsetYPx,
+    arrowBandPx,
+    // The fit is the worst-case lattice the placement rule samples inside: a centre grid one
+    // `spacingFactor x the largest jittered balloon` apart holds every pair at the spacing SPEC §10.1 asks
+    // for, so a board that cannot hold twelve of those centres cannot hold twelve balloons at that spacing.
+    // `ui/bunch.ts` (#33) owns the rule this number is read from, and this is the assertion that keeps it
+    // honest: true on the target tablet, false on a phone, where the count has to drop instead.
+    bunchFitsBoard: latticeCapacityPx(boardPx, balloonPx, arrowBandPx, LAYOUT.balloonSpacingFactor) >= MAX_BALLOONS,
     interactivePx: LAYOUT.interactiveMinPx,
     portrait,
     tapTargetTooSmall: cell < LAYOUT.tapTargetCssPx,
@@ -230,6 +278,28 @@ function rackWidthFor(panelColumnPx: number): number {
 /** A goal card row. The ring is taller than the numeral it holds (SPEC §8.1), so the ring sets the height. */
 function goalCardRowPx(goalPx: number): number {
   return Math.max(LAYOUT.chrome.goalRingPx, goalPx) + 2 * LAYOUT.chrome.goalPaddingPx
+}
+
+/**
+ * Issue #32: how many centres the board holds at `spacingFactor`. It is the worst case the placement rule can
+ * be held to (issue #33): on a grid one `factor x the largest jittered balloon` apart, the closest two
+ * centres are that far, and the required spacing is `factor x the mean of two jittered sizes`, so the lattice
+ * is valid for every pair whatever the jitter draws. The keep-out is half the largest jittered balloon plus
+ * the float amplitude plus `balloonMarginPx` on left, right and top; the bottom is the arrow's band.
+ */
+function latticeCapacityPx(boardPx: number, balloonPx: number, arrowBandPx: number, spacingFactor: number): number {
+  const jitterMax = 1 + LAYOUT.balloonSizeJitter
+  const halfMaxPx = (balloonPx * jitterMax) / 2
+  const usableWidthPx = boardPx - 2 * (halfMaxPx + CELEBRATION.balloonSwayPx + LAYOUT.balloonMarginPx)
+  const usableHeightPx = boardPx - (halfMaxPx + CELEBRATION.balloonBobPx + LAYOUT.balloonMarginPx) - arrowBandPx
+  if (usableWidthPx <= 0 || usableHeightPx <= 0) return 0
+  const latticeCellPx = spacingFactor * balloonPx * jitterMax
+  return (Math.floor(usableWidthPx / latticeCellPx) + 1) * (Math.floor(usableHeightPx / latticeCellPx) + 1)
+}
+
+/** The top of the play arrow's band, measured up from the board's bottom edge (SPEC §10.1, *The arrow*). */
+function arrowBandTopPx(bandPx: number, boardOffsetYPx: number, playPx: number, marginPx: number): number {
+  return Math.max(0, bandPx - boardOffsetYPx) + playPx + marginPx
 }
 
 /** CSS `clamp()` is newer than the engine (SPEC §2), so the bounds are computed here instead. */

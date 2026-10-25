@@ -160,13 +160,24 @@ describe('celebration stylesheet', () => {
     expect(css).toContain('transform: translateY(600%) scale(0.7)')
   })
 
-  it('sizes the balloons from the custom property, with a plain-px fallback and no clamp (issues #25, §6)', () => {
+  it('sizes the balloons from the custom property, with a plain-px fallback and no clamp (issues #25, #32)', () => {
     const balloon = rule('.balloon')
+    // The plain values are the Chrome 61 fallback, and both sides of the height mirror the constants:
+    // `balloonPxMin` is the floor `ui/layout.ts` applies, and `balloonHeightRatio` is the ratio the
+    // placement rule reads as the pop overshoot, so the stylesheet cannot disagree with it.
     expect(balloon).toContain(`width: ${LAYOUT.balloonPxMin}px`)
     expect(balloon).toContain(`var(--balloon-px, ${LAYOUT.balloonPxMin}px)`)
+    expect(balloon).toContain(`height: ${Math.round(LAYOUT.balloonPxMin * LAYOUT.balloonHeightRatio)}px`)
+    expect(balloon).toContain(`calc(var(--balloon-px, ${LAYOUT.balloonPxMin}px) * ${LAYOUT.balloonHeightRatio} * var(--balloon-jitter, 1))`)
     expect(balloon).toContain('var(--balloon-jitter')
     // `clamp()` is Chrome 79 and the engine baseline is 61, so the floor lives in the layout module.
     expect(balloon).not.toContain('clamp(')
+    // Issue #32: the bunch's spacing is the placement rule's, not a margin box, and the only spacing number
+    // in CSS is the band the arrow owns - which is `LAYOUT.celebrationBottomPaddingPct`, mirrored here.
+    expect(balloon).not.toContain('margin')
+    expect(rule('.celebration')).toContain(`padding-bottom: ${LAYOUT.celebrationBottomPaddingPct}%`)
+    // The root fallback is the same floor as the rule's, held to the constant rather than to a round number.
+    expect(css).toContain(`--balloon-px: ${LAYOUT.balloonPxMin}px`)
   })
 
   it('gives each transform one owner, so a balloon tapped mid-rise still pops (issue #26)', () => {

@@ -15,9 +15,10 @@
   --cols: 6;
   --rows: 6;
 
-  /* The party balloons (issue #25): ui/layout.ts writes the size from the measured board area, and
-     ui/celebration.ts writes a per-balloon jitter inline. These are the plain fallbacks. */
-  --balloon-px: 80px;
+  /* The party balloons (issues #25, #32): ui/layout.ts writes the size from the measured board area, and
+     ui/celebration.ts writes a per-balloon jitter inline. These are the plain fallbacks, and this one is
+     `LAYOUT.balloonPxMin` - the same floor the layout module applies, so the two cannot disagree. */
+  --balloon-px: 120px;
   --balloon-jitter: 1;
 
   /* The Chrome 61/no-JS fallback for the play arrow (issue #28). The shipped delay is derived per party
@@ -279,7 +280,10 @@ body {
   flex-direction: column;
   align-items: center;
   /* SPEC §10.1 phase 3: the play arrow fades in bottom-centre. The balloons are absolute and sit above
-     it, so the arrow never lands on top of a balloon she is trying to pop. */
+     it, so the arrow never lands on top of a balloon she is trying to pop. The percent mirrors
+     `LAYOUT.celebrationBottomPaddingPct`, and the arrow's own 16 px band clear of its box is
+     `LAYOUT.balloonMarginPx`: `ui/layout.ts` reads this rule's number rather than declaring its own, so the
+     no-go line the placement rule refuses cannot drift from the band the arrow is painted in. */
   justify-content: flex-end;
   padding-bottom: 4%;
   background: rgba(9, 12, 24, 0.35);
@@ -337,9 +341,13 @@ body {
 
 /* SPEC §10.1 phase 2 (issue #25): the balloons are the payoff, so they are sized from
    `--balloon-px` (written by ui/layout.ts from the measured board area) rather than a fingertip-sized
-   44px. The plain values are the Chrome 61 fallback; `clamp()` is newer than the engine, so the floor
-   lives in the module. `--balloon-jitter` is the per-balloon ±6% the module draws from the injected Rng.
-   The layer places them with `left`/`bottom`, so they are positioned rather than flowed.
+   44px. The plain values are the Chrome 61 fallback, and they mirror `LAYOUT.balloonPxMin` - the floor
+   lives in the module because `clamp()` is newer than the engine - and the height ratio mirrors
+   `LAYOUT.balloonHeightRatio`. `--balloon-jitter` is the per-balloon ±6% the module draws from the injected
+   Rng. The layer places them with `left`/`bottom`, so they are positioned rather than flowed: `gap` is
+   newer than the engine, and since issue #32 the spacing does not come from a margin box either - the
+   centres are placed by `ui/bunch.ts`, and `LAYOUT.balloonMarginPx` is the keep-out from the board border,
+   which `styles.test.ts` and `layout.test.ts` compare against the constants.
 
    Issue #26: the rise is an animation on the button, so the hit box travels with the balloon and a
    moving balloon can be tapped. `backwards`, not `both`: the fill only has to hide the balloon until
@@ -347,10 +355,10 @@ body {
 .balloon {
   position: absolute;
   bottom: 50%;
-  width: 80px;
-  height: 94px;
-  width: calc(var(--balloon-px, 80px) * var(--balloon-jitter, 1));
-  height: calc(var(--balloon-px, 80px) * 1.18 * var(--balloon-jitter, 1));
+  width: 120px;
+  height: 142px;
+  width: calc(var(--balloon-px, 120px) * var(--balloon-jitter, 1));
+  height: calc(var(--balloon-px, 120px) * 1.18 * var(--balloon-jitter, 1));
   padding: 0;
   border: 0;
   background: transparent;

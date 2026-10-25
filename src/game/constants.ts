@@ -182,19 +182,41 @@ export const LAYOUT = {
   /** Nothing interactive is smaller than this (SPEC §13): the mute target and the numeral's box. */
   interactiveMinPx: 64,
   /**
-   * The party balloons (SPEC §10.1, issue #25). The size comes from the measured board area rather
-   * than a fixed pixel value, so it survives the target device's aspect ratio and a rotation; the
-   * floor keeps §13's 64 px tap target clear even on a small window.
+   * The party balloons (SPEC §10.1, issues #25, #32). The size comes from the measured board area rather
+   * than a fixed pixel value, so it survives the target device's aspect ratio and a rotation. The factors
+   * are 1.5x the ones issue #25 measured (0.13/0.15 -> 0.195/0.225), which is 135 CSS px on the target
+   * tablet; the floor is 120 px, because a -6% jittered 120 px balloon is 113 px and well clear of §13's
+   * 90 CSS px tap target, so a small board still shows a bunch rather than fingertip balloons.
    */
-  balloonWidthFactor: 0.13,
-  balloonHeightFactor: 0.15,
-  balloonPxMin: 80,
+  balloonWidthFactor: 0.195,
+  balloonHeightFactor: 0.225,
+  balloonPxMin: 120,
+  /** Height over width, which is what `style.css` paints `.balloon` at; `styles.test.ts` compares them. */
+  balloonHeightRatio: 1.18,
   /** Each balloon's own size is jittered by this fraction, so the bunch never looks tiled. */
   balloonSizeJitter: 0.06,
-  /** The resting band, in `bottom` percent of the board area: high in the upper half. */
+  /**
+   * Issue #32: the space between a balloon at the extreme of its float and the board border. The play
+   * arrow keeps its own band clear of its box (SPEC §10.1 *The arrow*), and the arrow's band reads off
+   * this same number rather than a second constant, so the two cannot drift apart.
+   */
+  balloonMarginPx: 16,
+  /** Minimum centre-to-centre spacing, as a fraction of the mean of the two jittered sizes (issue #33). */
+  balloonSpacingFactor: 0.55,
+  /** The floor below which the spacing stops tightening; past it, the count drops instead (issue #33). */
+  balloonMinExposure: 0.40,
+  /**
+   * `.celebration`'s `padding-bottom` percent — the band the play arrow sits in. Mirrored against the
+   * stylesheet by `styles.test.ts`, the same way the other chrome values are.
+   */
+  celebrationBottomPaddingPct: 4,
+  /**
+   * The band and the spread are the fallback the stylesheet still uses for a single balloon. Since issue #33
+   * the placement rule in `ui/bunch.ts` is the source of truth, and the bunch is no longer percentages of
+   * the overlay (`styles.test.ts` asserts this).
+   */
   balloonBandBottomMin: 50,
   balloonBandBottomMax: 78,
-  /** The spread, in `left` percent: wider than the board, so the bunch overlaps and the outer ones hang off. */
   balloonSpreadStart: -8,
   balloonSpreadEnd: 108,
   /** Device pixel ratio cap (SPEC §5). */
