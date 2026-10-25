@@ -1,18 +1,19 @@
 import './style.css'
 import { createSynthPlayer } from './audio/synth'
 import { ANIMAL_POOL } from './game/animals'
-import { GRID, MAX_QUEUED_TAPS } from './game/constants'
+import { GRID } from './game/constants'
 import { createLevel, resumeLevel } from './game/level'
 import { createRng, seedFromCrypto, seedFromRandom } from './game/rng'
 import { partySize, resolveTap } from './game/rules'
 import { readSave, toSaveState, writeSave, type SaveContext } from './game/save'
+import { createTapQueue } from './game/tapQueue'
 import type { PopResult, SaveState, TapResult } from './game/types'
 import { mountAdultReset, type Timer } from './ui/adultReset'
 import { createBootLog, describeError } from './ui/bootlog'
 import { createBoardView } from './ui/boardView'
 import { capabilityFlags, engineToken, hasRandomValues } from './ui/capabilities'
 import { createCelebration, type CelebrationLayer } from './ui/celebration'
-import { mountDebugOverlay, parseDebugFlag, goalsText, numberText, type DebugOverlay, type GoalRow } from './ui/debug'
+import { animalsText, goalsText, mountDebugOverlay, numberText, parseDebugFlag, type DebugOverlay, type GoalRow } from './ui/debug'
 import { renderFallback } from './ui/fallback'
 import { applyLayout, type Viewport } from './ui/layout'
 import { createMuteController, mountMuteToggle } from './ui/muteToggle'
@@ -129,7 +130,7 @@ function start(root: HTMLElement): void {
       // wiped level straight back. Issue #11: the reset is a level change, so anything still queued goes
       // with it, and the board is dealt again rather than left as the wiped one was.
       writeSave(state, context, store)
-      queuedTaps.length = 0
+      queue.clear()
       partyShown = false
       celebration.stop()
       party.hidden = true
@@ -190,18 +191,23 @@ function start(root: HTMLElement): void {
     celebration.resize()
   })
 
-  let busy = true
-  const queuedTaps: number[] = []
+  // Issue #11 (SPEC §7.5): the queue is the pure module in `game/tapQueue.ts`, so what it decides is
+  // testable without a screen. Here it is only wired: the game hands it taps, opens the window a settle
+  // occupies, and runs whatever the queue says may run.
+  const queue = createTapQueue()
   let firstTap = true
   let firstPop = true
   // Issue #14: the completion cue fires once per completion. Goals stay at zero after the win, so a
   // tap on a completed level must not fanfare again.
   let partyShown = false
 
+  // The window is open for the deal, so taps during it wait rather than run against a board that is
+  // still appearing.
+  queue.openWindow()
   void view
     .renderInitial(state.board)
     .then(() => {
-      busy = false
+      queue.closeWindow()
       log.step('first frame')
       showLevel()
       drainQueue()
@@ -220,16 +226,19 @@ function start(root: HTMLElement): void {
     // SPEC §10: the board is inert while the party is showing, apart from the celebration's own
     // interactions. A tap during the party is not a tap on the level, so it does not reach the queue.
     if (partyShown) return
-    if (busy) {
-      // Issue #11: at most two taps wait, so the queue can never run ahead of what she sees.
-      if (queuedTaps.length < MAX_QUEUED_TAPS) queuedTaps.push(index)
-      return
-    }
-    void resolveTapAndShow(index)
+
+    // Issue #11: the queue decides what a tap becomes - it runs, it waits behind the taps that arrived
+    // before it, or it is discarded quietly past the cap. Only 'run' is a tap the game acts on, and a
+    // dropped one is remembered nowhere, so there is nothing here that could charge her for it.
+    const arrival = queue.register(index)
+    reportQueue()
+    if (arrival === 'run') void resolveTapAndShow(index)
   }
 
   async function resolveTapAndShow(index: number): Promise<void> {
-    busy = true
+    // Issue #11: this is the window the queue blocks taps for. The queue owns no clock, so the block ends
+    // exactly here, when the settle this tap produced has finished animating.
+    queue.openWindow()
     try {
       const result = resolveTap(state, index, rng)
 
@@ -260,9 +269,11 @@ function start(root: HTMLElement): void {
     } catch (error) {
       log.error(describeError(error))
     } finally {
-      busy = false
+      queue.closeWindow()
     }
 
+    // The index that runs now is resolved against `state`, which is the board the settle made - not the
+    // one she tapped on (SPEC §7.5).
     drainQueue()
   }
 
@@ -302,8 +313,14 @@ function start(root: HTMLElement): void {
     debug.set('level', numberText(state.level))
     debug.set('rack', numberText(state.bubbles))
     debug.set('goals', goalsText(goalRows()))
-    debug.set('queue', numberText(queuedTaps.length))
+    reportQueue()
     reportLive(debug, celebration)
+  }
+
+  /** Issue #11: the queue row is the only way to see a tap still waiting, on a device with no console (SPEC §14.3). */
+  function reportQueue(): void {
+    if (debug === null) return
+    debug.set('queue', numberText(queue.size()))
   }
 
   /** SPEC §10.1: the party is the rack, and it is the only thing that plays the completion cue. */
@@ -321,7 +338,9 @@ function start(root: HTMLElement): void {
     partyShown = false
     celebration.stop()
     party.hidden = true
-    queuedTaps.length = 0
+    // Issue #11: a level change clears the queue, because the taps waiting belong to the level she has
+    // left, and the board they would have been decided against is not the one the new level was dealt.
+    queue.clear()
     state = createLevel(state.level + 1, sessionSeed, pool)
     lastSave = toSaveState(state, context)
     writeSave(state, context, store)
@@ -333,9 +352,9 @@ function start(root: HTMLElement): void {
   }
 
   function drainQueue(): void {
-    if (busy) return
-    const next = queuedTaps.shift()
-    if (next !== undefined) void resolveTapAndShow(next)
+    // Nothing may run while the window is open, so this is the moment the queue releases the oldest tap.
+    const next = queue.drain()
+    if (next !== null) void resolveTapAndShow(next)
   }
 }
 
