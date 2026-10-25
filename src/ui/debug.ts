@@ -206,10 +206,22 @@ export function updateFps(now: number, samples: number[]): string {
   return ((recent.length - 1) / (span / 1000)).toFixed(1)
 }
 
-/** The trace is the reason the overlay is worth opening on the tablet, so it is never truncated. */
+/**
+ * The trace is the reason the overlay is worth opening on the tablet, so it is never truncated.
+ *
+ * SPEC §14.3: "the previous run's steps then this run's". Both halves matter on the tablet: the browser
+ * and the installed app share one Chrome profile, so the previous run is the standalone launch that died,
+ * and this run is the browser visit reading it (issue #23). Showing only `current()` hid exactly the run
+ * the overlay was opened to see. `traceLines` starts each run with its own timestamp, so the two blocks
+ * stay distinguishable without a heading the row would have to spend a line on.
+ */
 function traceText(log: BootLog | undefined): string {
   if (log === undefined) return 'nothing recorded yet'
-  return traceLines(log.current()).join('\n')
+  const lines: string[] = []
+  const previous = log.previous()
+  if (previous !== null) lines.push(...traceLines(previous))
+  lines.push(...traceLines(log.current()))
+  return lines.join('\n')
 }
 
 function textOr(value: string | undefined, fallback: string): string {

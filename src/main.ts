@@ -4,7 +4,7 @@ import { ANIMAL_POOL } from './game/animals'
 import { GRID } from './game/constants'
 import { createLevel, resumeLevel } from './game/level'
 import { createRng, seedFromCrypto, seedFromRandom } from './game/rng'
-import { partySize, resolveTap } from './game/rules'
+import { partySize, resolveTap, shouldShowParty } from './game/rules'
 import { readSave, toSaveState, writeSave, type SaveContext } from './game/save'
 import { createTapQueue } from './game/tapQueue'
 import type { PopResult, SaveState, TapResult } from './game/types'
@@ -231,6 +231,10 @@ function start(root: HTMLElement): void {
       queue.closeWindow()
       log.step('first frame')
       showLevel()
+      // SPEC §14.1: a level resumes exactly as it was left. A save written after the goals hit zero is a
+      // party she has not tapped the play arrow on yet, so the party opens again rather than leaving a
+      // finished board with no party and no arrow. The run that completed the level already counted it.
+      if (shouldShowParty(state, partyShown)) showParty(false)
       drainQueue()
     })
     .catch((error: unknown) => {
@@ -273,6 +277,14 @@ function start(root: HTMLElement): void {
       if (result.group !== null) {
         playTap(result)
         await view.animatePop(popForView(result))
+        // SPEC §7.4: the dead board is the core's decision, but the board on screen has to become the
+        // board in the save. Without this step the view kept the *settled* board while `state` held the
+        // reshuffled one, so the next tap was decided against tiles she could not see. The whoosh belongs
+        // to this animation, not to the pop that preceded it.
+        if (result.reshuffled !== null) {
+          player.playReshuffle()
+          await view.animateReshuffle(result.reshuffled)
+        }
       } else {
         view.animateInvalid(index)
         player.playInvalid()
@@ -285,7 +297,7 @@ function start(root: HTMLElement): void {
       }
 
       // SPEC §8.1: both goals at zero is the win, and the party is what is left on the rack.
-      if (result.complete && !partyShown) showParty()
+      if (shouldShowParty(state, partyShown)) showParty()
     } catch (error) {
       log.error(describeError(error))
     } finally {
@@ -303,7 +315,6 @@ function start(root: HTMLElement): void {
     // SPEC §11: the bubble that leaves the rack has its own tick, distinct from an animal pop.
     if (result.bubbleSpent) player.playBubble()
     player.playPop(group.animal, group.cells.length)
-    if (result.reshuffled !== null) player.playReshuffle()
   }
 
   /** The view animates exactly what the core decided, so the screen and the save cannot disagree. */
@@ -346,11 +357,19 @@ function start(root: HTMLElement): void {
     debug.set('queue', numberText(queue.size()))
   }
 
-  /** SPEC §10.1: the party is the rack, and it is the only thing that plays the completion cue. */
-  function showParty(): void {
+  /**
+   * SPEC §10.1: the party is the rack, and it is the only thing that plays the completion cue.
+   * `countCompletion` is false when this is the launch restoring a party rather than the tap that earned
+   * it: the level was already counted by the run that reached it (SPEC §14.1, issue #15).
+   */
+  function showParty(countCompletion = true): void {
     partyShown = true
+    // Issue #11, SPEC §10: a tap that arrived during the settle that won belongs to the level just
+    // finished. Draining it after this point would pop a group behind the party's dim and spend a bubble
+    // after the balloons were sized, so it goes with the level rather than into it.
+    queue.clear()
     // Internal only, never shown to her (SPEC §14.1).
-    context.levelsCompleted += 1
+    if (countCompletion) context.levelsCompleted += 1
     persistProgress()
     log.step(`party ${partySize(state).tier}`)
     party.hidden = false

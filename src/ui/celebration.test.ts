@@ -45,4 +45,12 @@ describe('celebration module (issues #12 and #13)', () => {
     expect(source.match(/window\.setTimeout/g)).toHaveLength(1)
     expect(source).toContain('later(CELEBRATION.playButtonDelayMs, reveal)')
   })
+
+  it('keeps only timers that can still fire, so a long party cannot grow the list', () => {
+    // Every respawn of the balloon set schedules another handful. A list that also kept fired ids would
+    // grow for as long as she plays, which is what "idles indefinitely" rules out (SPEC §10.1 phase 4).
+    const later = section('function later(', 'function clearTimers')
+    expect(later).toContain('timers.splice(at, 1)')
+    expect(later).toContain('timers.push(id)')
+  })
 })

@@ -3,7 +3,7 @@ import { getGroups, hasGroupOfAtLeast, hasLegalGroup, indexOf } from './board'
 import { BOARD_SIZE, GRID, MAX_BALLOONS, MIN_BUBBLES, RESHUFFLE_MIN_GROUP } from './constants'
 import { createLevel } from './level'
 import { createRng } from './rng'
-import { countByAnimal, goalProgress, isComplete, partySize, resolveTap } from './rules'
+import { countByAnimal, goalProgress, isComplete, partySize, resolveTap, shouldShowParty } from './rules'
 import type { Goal, LevelState, Rng } from './types'
 
 const POOL = ['cat', 'rabbit', 'panda', 'frog']
@@ -172,6 +172,37 @@ describe('tap resolution', () => {
 
     const different = resolveTap(fresh, target.cells[0]!, createRng(fresh.seed + 1))
     expect(different.state.board).not.toEqual(first.state.board)
+  })
+})
+
+describe('the party on screen (SPEC §10, §14.1)', () => {
+  const board = boardWith({ animal: 'frog', row: 0, col: 0, size: 2 })
+
+  it('opens when the goals are done and not before', () => {
+    const unfinished = stateWith(board, [goal('frog', 0, 2), goal('panda', 1, 5)], 12, 12)
+    const finished = stateWith(board, [goal('frog', 0, 2), goal('panda', 0, 5)], 12, 12)
+
+    expect(shouldShowParty(unfinished, false)).toBe(false)
+    expect(shouldShowParty(finished, false)).toBe(true)
+  })
+
+  it('opens a party restored from a save, which no tap has triggered yet', () => {
+    // SPEC §14.1: a force-close during the celebration leaves a completed save. Reopening used to show the
+    // finished board with the party hidden and no play arrow - stuck until she happened to pop again.
+    const finished = stateWith(board, [goal('frog', 0, 2), goal('panda', 0, 5)], 12, 12)
+    expect(shouldShowParty(finished, false)).toBe(true)
+  })
+
+  it('does not reopen a party that is already showing', () => {
+    // SPEC §10.1: the party never ends by itself, and a tap on the completed board behind it must not start
+    // a second one. `partyShown` is the game's "already open" fact.
+    const finished = stateWith(board, [goal('frog', 0, 2), goal('panda', 0, 5)], 12, 12)
+    expect(shouldShowParty(finished, true)).toBe(false)
+  })
+
+  it('needs both goals, because one is not a win (SPEC §8.1)', () => {
+    const oneDone = stateWith(board, [goal('frog', 0, 2), goal('panda', 2, 5)], 12, 12)
+    expect(shouldShowParty(oneDone, false)).toBe(false)
   })
 })
 

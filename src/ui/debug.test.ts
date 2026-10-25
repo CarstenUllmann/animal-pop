@@ -6,7 +6,7 @@ import { ANIMAL_IDS } from '../game/animalIds'
 import { bubblesForLevel, createLevel, goalTargetForLevel } from '../game/level'
 import { readSave, toSaveState, writeSave, type SaveContext } from '../game/save'
 import type { KeyValueStore } from '../game/types'
-import { describeError } from './bootlog'
+import { describeError, traceLines, type BootLog, type BootRun } from './bootlog'
 import {
   DEBUG_ROWS,
   MAX_VALUE_LENGTH,
@@ -150,6 +150,18 @@ function rowsThatCanNeverMove(source: string): string[] {
   return missing
 }
 
+/** A boot log with both halves the row reads, so the previous-then-current rule can be checked in node. */
+function fakeBootLog(previous: BootRun | null, current: BootRun): BootLog {
+  return {
+    previous: () => previous,
+    current: () => current,
+    step: () => undefined,
+    error: () => undefined,
+    storageAvailable: () => true,
+    subscribe: () => () => undefined,
+  }
+}
+
 function fakeStore(initial: Record<string, string> = {}): KeyValueStore {
   const values = new Map(Object.entries(initial))
   return {
@@ -208,6 +220,34 @@ describe('debug rows', () => {
     const longTrace = 'first tap\n'.repeat(20)
     expect(debugRowText('boot', longTrace)).toBe(longTrace)
     expect(rowText('boot', 'first pop')).toBe('first pop')
+  })
+
+  it('carries the previous run before this one, which is the trace a force-close leaves (SPEC §14.3)', () => {
+    // Issue #23: the browser and the installed app share one Chrome profile, so the previous run is the
+    // standalone launch that died and this run is the browser visit reading it. Showing only `current()`
+    // hid exactly the run the overlay was opened to see.
+    const previous: BootRun = {
+      startedAt: Date.UTC(2026, 9, 24, 8, 0, 0),
+      steps: [{ name: 'standalone boot', at: 4 }],
+      lastError: 'Error: dead',
+    }
+    const current: BootRun = {
+      startedAt: Date.UTC(2026, 9, 24, 8, 5, 0),
+      steps: [{ name: 'browser boot', at: 2 }],
+      lastError: null,
+    }
+
+    const row = createRowModel({ bootLog: fakeBootLog(previous, current) }).text('boot')
+    expect(row).toContain('standalone boot')
+    expect(row).toContain('error Error: dead')
+    expect(row).toContain('browser boot')
+    expect(row.indexOf('standalone boot')).toBeLessThan(row.indexOf('browser boot'))
+  })
+
+  it('shows this run alone when no trace survived a previous launch', () => {
+    const current: BootRun = { startedAt: 0, steps: [{ name: 'boot', at: 1 }], lastError: null }
+    expect(createRowModel({ bootLog: fakeBootLog(null, current) }).text('boot')).toBe(traceLines(current).join('\n'))
+    expect(createRowModel({}).text('boot')).toBe('nothing recorded yet')
   })
 
   it('shows goals as what is still missing', () => {

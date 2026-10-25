@@ -31,6 +31,18 @@ export function isComplete(state: LevelState): boolean {
   return state.goals.length > 0 && state.goals.every((goal) => goal.remaining <= 0)
 }
 
+/**
+ * Whether the party belongs on screen now (SPEC §10): the level is complete and no party is showing.
+ *
+ * Both moments read the same rule - the tap that finishes the level, and the launch that resumes a save
+ * written after it. A completed save used to reopen on a finished board with the party hidden and no play
+ * arrow, which is a screen with no way forward until she happens to pop another group (SPEC §14.1 says
+ * the level resumes as it was left; §3 says there is no stuck state).
+ */
+export function shouldShowParty(state: LevelState, partyShown: boolean): boolean {
+  return !partyShown && isComplete(state)
+}
+
 /** The party tier a share falls in (SPEC §8.4): the celebration reads its intensity from this. */
 export function partyTier(pct: number): PartyTier {
   if (pct >= PARTY_TIERS.big) return 'big'

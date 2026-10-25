@@ -122,7 +122,15 @@ export function createCelebration(
   let tier: FrameTier = '60fps'
 
   function later(ms: number, run: () => void): void {
-    timers.push(window.setTimeout(run, ms))
+    // Only pending timers are kept: a party that is left open respawns a set of balloons every time she
+    // pops them all, and a list that also held every timer already fired would grow for as long as she
+    // plays (SPEC §10.1 phase 4, "idles indefinitely"). `clearTimers` then walks exactly what can still fire.
+    const id = window.setTimeout(() => {
+      const at = timers.indexOf(id)
+      if (at >= 0) timers.splice(at, 1)
+      run()
+    }, ms)
+    timers.push(id)
   }
 
   function clearTimers(): void {
@@ -269,6 +277,10 @@ export function createCelebration(
       if (!running || balloon.popped) return
       balloon.popped = true
       el.classList.add('balloon--popped')
+      // A party restored after a force-close (SPEC §14.1) opens with no gesture behind it, so the audio
+      // context may not exist yet. This tap is the gesture that may create it, exactly as Android requires
+      // (SPEC §11); on a party she played into, unlock is a no-op.
+      audio.unlock()
       audio.playBalloon(balloon.chimeIndex)
 
       const own = el.getBoundingClientRect()

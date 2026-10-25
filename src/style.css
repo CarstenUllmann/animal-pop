@@ -342,12 +342,16 @@ body {
   touch-action: manipulation;
   /* SPEC §10.1: they rise one after another, so the scene does not arrive as one flat wall. The
      stagger is the inline `animation-delay` the module sets from CELEBRATION.balloonStaggerMs,
-     which is why the rise is an animation. */
-  animation: balloon-rise 600ms ease-out both;
+     which is why the rise is an animation. `backwards`, not `both`: the fill only has to hide the
+     balloon until its stagger arrives. With `both` the final keyframe kept winning the cascade after
+     the animation ended, so `.balloon--popped`'s transform never computed and a tapped balloon did
+     not pop at all - only the canvas sparkle happened (SPEC §3, one tap one visible consequence). */
+  animation: balloon-rise 600ms ease-out backwards;
 }
 
-/* The pop is a transition, not a second animation, because the inline delay the module sets for
-   the stagger would otherwise delay the pop as well. A tapped balloon pops at once. */
+/* The pop is a transition, not a second animation, because the inline delay the module sets for the
+   stagger would otherwise delay the pop as well. A tapped balloon pops at once. This only works
+   because the rise no longer fills forwards; see the `backwards` note above. */
 .balloon--popped {
   transform: scale(0.55);
   transition: transform 260ms ease-out;

@@ -90,6 +90,15 @@ describe('celebration stylesheet', () => {
     expect(rule('.balloon--popped')).not.toContain('animation')
   })
 
+  it('lets the rise stop filling forward, or a tapped balloon cannot pop (SPEC §10.1)', () => {
+    // `both`/`forwards` keeps the final keyframe - `transform: translateY(0) scale(1)` - applying after
+    // the rise ends, and animation values beat the `.balloon--popped` declaration, so the transition had
+    // nothing to animate. `backwards` still hides a balloon until its stagger arrives.
+    expect(rule('.balloon')).toContain('animation: balloon-rise 600ms ease-out backwards')
+    expect(rule('.balloon')).not.toContain('animation: balloon-rise 600ms ease-out both')
+    expect(rule('.balloon--popped')).toContain('transform: scale(')
+  })
+
   it('holds the play button until the fanfare has run, at the constant it mirrors', () => {
     expect(css).toContain(`--play-button-delay: ${CELEBRATION.playButtonDelayMs}ms`)
     expect(rule('.next')).toContain('animation-delay')
