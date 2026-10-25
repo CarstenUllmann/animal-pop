@@ -1,7 +1,7 @@
 # Pop Pals — Game Spec
 
 Status: **draft v1, ready for build**
-Last updated: 2026-10-24
+Last updated: 2026-10-25
 Target: browser (PWA) on an old Android tablet; Android APK possible later
 
 ---
@@ -333,13 +333,18 @@ against the unchanged 500-particle pool, so nothing allocates.
 
 "Frame time" is the interval the browser actually delivers between animation frames, not the time the
 celebration spends drawing: on the tablet the compositor and the rest of the page are what make a frame
-late, and a layer timing only its own arcs reports healthy while the screen runs at 25fps. Because the
-30fps tier throttles draws to every other frame, the meter normalises by the animation frames in its
-window: a panel still delivering 60Hz reads 16.7ms even while the throttle is on, and one that has fallen
-to 30Hz reads 33ms and stays degraded. It returns to 60fps after `recoverAfterMs` inside the budget. A
-hidden tab or a sleeping device resets the window instead of being charged as a slow frame. The tier is
-observable as `data-tier` and in `?debug=1`'s frame-tier row, which is how issue #12's device check reads
-it.
+late, and a layer timing only its own arcs reports healthy while the screen runs at 25fps. "Exceeds
+budget for 1s" is measured over a window of `measureWindowMs` (250ms) of delivered frames, not frame by
+frame, because the tablet delivers a mix rather than a steady rate: 16.7ms then 46.7ms is 31fps averaged
+over a second, and a meter that classified frames one at a time and cleared its record whenever one frame
+landed inside the budget never reached the threshold (issue #29). The window is the same scale as
+`?debug=1`'s fps row, so the tier and the fps reading the device check compares are measured over
+comparable spans. Because the 30fps tier throttles draws to every other frame, the meter normalises by the
+animation frames in its window: a panel still delivering 60Hz reads 16.7ms even while the throttle is on,
+and one that has fallen to 30Hz reads 33ms and stays degraded. It returns to 60fps after `recoverAfterMs`
+inside the budget. A hidden tab or a sleeping device drops the window it interrupted instead of being
+charged as a slow frame, and what was measured before the gap stays measured. The tier is observable as
+`data-tier` and in `?debug=1`'s frame-tier row, which is how issue #12's device check reads it.
 
 ---
 
@@ -503,10 +508,10 @@ Off by default. This is the only on-device debugging
 channel (no USB tethering guaranteed), so it must be built in M0 rather than bolted on.
 
 It also carries a `boot` row with the persisted boot trace from §14.1 — the previous run's steps
-then this run's, starting with the engine version token and the feature-detected APIs it found. The
-engine token only recognises Chromium user agents, so inside Firefox's PWA wrapper it reads
-`unknown engine` (issue #23, measured 2026-10-25); the `display` row still answers the standalone/browser
-question there.
+then this run's, starting with the engine version token and the feature-detected APIs it found. The token
+names whichever engine the run booted in, Chrome or Firefox, so a trace taken inside Firefox's PWA wrapper
+reads `Firefox/158` rather than `unknown engine` (issue #23, measured 2026-10-25; the gap was issue #30).
+The `display` row still answers the standalone/browser question there.
 Since a crash can end the process before the overlay is ever mounted, boot must also render a
 plain fallback panel **without** `?debug=1` when it fails, and no startup call may throw:
 feature-detect `crypto.getRandomValues`, `matchMedia`, `Element.prototype.animate` and
@@ -592,7 +597,13 @@ partySize(state: LevelState): { balloons: number; tier: PartyTier }
 ### Kid-proofing
 
 `touch-action: none`, `user-select: none`, `-webkit-touch-callout: none`, viewport
-`user-scalable=no, maximum-scale=1`, no context menu handler, overscroll-behavior: none.
+`user-scalable=no, maximum-scale=1`, no context menu handler. `overscroll-behavior: none` is on the list
+but is not used: it is newer than the Chrome 61 parse floor §2 holds the shipped sources to (Chrome 63), so
+`baseline.test.ts` keeps it out of the stylesheet. The no-scroll half of the intent is delivered without it —
+`overflow: hidden` on the shell plus `touch-action: none` — and `styles.test.ts` asserts that. The gestures
+CSS cannot disable on Chrome/Android (long-press menu, pinch, double-tap zoom) are prevented by listeners in
+`ui/shell.ts`, which never blocks a single-finger tap. `src/ui/shell.test.ts` pins the rules, the listeners
+and that carve-out; whether the gestures actually do nothing on the panel is §16.3's check (issue #20).
 Accept the Android back gesture (it exits the PWA); persistence (§14.1) makes it harmless.
 
 ---
