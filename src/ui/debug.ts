@@ -65,17 +65,58 @@ export interface DebugOverlay {
 /** Long values would push the overlay over the panel, so rows are capped. */
 export const MAX_VALUE_LENGTH = 48
 
-/** The rows the game can report, plus `boot`, the trace, which is not a value. */
-const GAME_KEYS = ['level', 'seed', 'animals', 'rack', 'goals', 'queue', 'balloons', 'particles', 'tier', 'fps']
+/**
+ * The rows the overlay declares. Issue #18 wants every listed field live, and a row is only as live as the
+ * last thing the game reported for it, so the rows are data rather than a list of names: the test compares
+ * this list against what main.ts reports, which is how a row that can never update gets caught. `boot` is a
+ * row like any other, except that it is the trace rather than a value.
+ */
+export interface RowDef {
+  key: string
+  label: string
+  /** What the row shows before the game has reported anything for it. */
+  initial: (info: DebugInfo) => string
+  trace?: boolean
+  /** True when the value cannot change during a run, so what the row shows at mount is the whole truth.
+   *  The session seed is generated once per install (SPEC §9.2), so it is the only row fixed by the
+   *  definition rather than by what the game reports (issue #18). */
+  fixed?: boolean
+}
+
+export const DEBUG_ROWS: readonly RowDef[] = [
+  { key: 'level', label: 'level', initial: (info) => textOr(numberText(info.level), 'not started') },
+  { key: 'seed', label: 'seed', initial: (info) => textOr(seedText(info.seed), 'not recorded'), fixed: true },
+  { key: 'animals', label: 'animals', initial: (info) => animalsText(info.animals) },
+  { key: 'rack', label: 'rack', initial: (info) => textOr(numberText(info.bubbles), 'no rack') },
+  { key: 'goals', label: 'remaining goals', initial: (info) => goalsText(info.goals) },
+  { key: 'queue', label: 'tap queue', initial: (info) => textOr(numberText(info.queue), '0') },
+  { key: 'balloons', label: 'balloons popped', initial: (info) => textOr(numberText(info.balloons), '0') },
+  { key: 'particles', label: 'particles alive', initial: (info) => textOr(numberText(info.particles), '0') },
+  { key: 'tier', label: 'frame tier', initial: (info) => textOr(info.tier, 'not running') },
+  { key: 'fps', label: 'fps', initial: () => 'not running' },
+  { key: 'boot', label: 'boot', initial: (info) => traceText(info.bootLog), trace: true },
+]
+
+export function debugRowKeys(): string[] {
+  return DEBUG_ROWS.map((row) => row.key)
+}
+
+function rowDef(key: string): RowDef | undefined {
+  for (const row of DEBUG_ROWS) {
+    if (row.key === key) return row
+  }
+  return undefined
+}
 
 export function isDebugRow(key: string): boolean {
-  return key === 'boot' || GAME_KEYS.indexOf(key) >= 0
+  return rowDef(key) !== undefined
 }
 
 /** The text a row shows for a reported value. A trace row is never truncated. */
 export function debugRowText(key: string, text: string): string {
-  if (!isDebugRow(key)) return ''
-  if (key === 'boot') return text
+  const row = rowDef(key)
+  if (row === undefined) return ''
+  if (row.trace) return text
   return text.length > MAX_VALUE_LENGTH ? `${text.slice(0, MAX_VALUE_LENGTH)}…` : text
 }
 
@@ -114,27 +155,42 @@ export function nextLevelClick(handler: (() => void) | undefined, enabled: boole
   handler()
 }
 
-interface RowDef {
-  key: string
-  label: string
-  /** What the row shows before the game has reported anything for it. */
-  initial: (info: DebugInfo) => string
-  trace?: boolean
+/**
+ * The rows as a pure model. `mountDebugOverlay` paints every row from this and writes every later report
+ * through it, so the text a row shows at mount and the text the game reports for the same value cannot
+ * disagree. That is the only part of "the rows are live" a node test can reach: vitest runs in node
+ * (vitest.config.ts), so the overlay itself cannot be mounted in a test (issue #18).
+ */
+export interface RowModel {
+  text(key: string): string
+  /** Report a value through the same path `set` uses, so the truncation rule applies to both. */
+  set(key: string, text: string): string
 }
 
-const ROWS: RowDef[] = [
-  { key: 'level', label: 'level', initial: (info) => textOr(numberText(info.level), 'not started') },
-  { key: 'seed', label: 'seed', initial: (info) => textOr(seedText(info.seed), 'not recorded') },
-  { key: 'animals', label: 'animals', initial: (info) => animalsText(info.animals) },
-  { key: 'rack', label: 'rack', initial: (info) => textOr(numberText(info.bubbles), 'no rack') },
-  { key: 'goals', label: 'remaining goals', initial: (info) => goalsText(info.goals) },
-  { key: 'queue', label: 'tap queue', initial: (info) => textOr(numberText(info.queue), '0') },
-  { key: 'balloons', label: 'balloons popped', initial: (info) => textOr(numberText(info.balloons), '0') },
-  { key: 'particles', label: 'particles alive', initial: (info) => textOr(numberText(info.particles), '0') },
-  { key: 'tier', label: 'frame tier', initial: (info) => textOr(info.tier, 'not running') },
-  { key: 'fps', label: 'fps', initial: () => 'not running' },
-  { key: 'boot', label: 'boot', initial: (info) => traceText(info.bootLog), trace: true },
-]
+export function createRowModel(info: DebugInfo): RowModel {
+  const shown: Record<string, string> = {}
+  for (const row of DEBUG_ROWS) shown[row.key] = debugRowText(row.key, row.initial(info))
+
+  return {
+    text(key: string): string {
+      const value = shown[key]
+      return value === undefined ? '' : value
+    },
+    set(key: string, text: string): string {
+      const value = debugRowText(key, text)
+      if (isDebugRow(key)) shown[key] = value
+      return value
+    },
+  }
+}
+
+/** The error row shows what the game reports and nothing else. It is deliberately not truncated:
+ *  `MAX_VALUE_LENGTH` caps a row, but the error is the reason the overlay was opened. An empty message
+ *  would leave the row blank, so it keeps the word the row already shows before anything is reported
+ *  (issue #18). */
+export function errorText(message: string): string {
+  return message === '' ? 'none' : message
+}
 
 export function updateFps(now: number, samples: number[]): string {
   const window = 300
@@ -190,27 +246,37 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo): DebugOver
   const grid = document.createElement('dl')
   grid.className = 'debug__rows'
   const values: Record<string, HTMLElement> = {}
+  const rows = createRowModel(info)
 
-  for (const row of ROWS) {
+  const set = (key: string, text: string): string => {
+    const shown = rows.set(key, text)
+    const value = values[key]
+    if (value === undefined) return shown
+    value.textContent = shown
+    return shown
+  }
+
+  for (const row of DEBUG_ROWS) {
     const label = document.createElement('dt')
     label.className = 'debug__label'
     label.textContent = row.label
 
     const value = document.createElement('dd')
     value.className = row.trace ? 'debug__value debug__value--trace' : 'debug__value'
-    value.textContent = row.initial(info)
+    // Painted from the same model `set` writes through, so the value the row shows at mount and the
+    // value the game reports for the same thing cannot disagree.
+    value.textContent = rows.text(row.key)
     values[row.key] = value
 
     grid.append(label, value)
   }
 
   // Issue #18: every listed field has to be live, and the boot row is the one that changes after mount.
-  // The log tells us when it moves, so the row is not a snapshot taken at mount.
+  // The log tells us when it moves, so the row is not a snapshot taken at mount, and the update goes
+  // through `set` like every other row does.
   const bootRow = values['boot']
   if (info.bootLog !== undefined && bootRow !== undefined) {
-    info.bootLog.subscribe(() => {
-      bootRow.textContent = traceText(info.bootLog)
-    })
+    info.bootLog.subscribe(() => set('boot', traceText(info.bootLog)))
   }
 
   const errorRow = document.createElement('div')
@@ -220,7 +286,9 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo): DebugOver
   errorLabel.textContent = 'last error'
   const errorValue = document.createElement('p')
   errorValue.className = 'debug__error-value'
-  errorValue.textContent = 'none'
+  // What the row shows before anything is reported is the same word `errorText` falls back to, so the
+  // row and the helper cannot disagree about what "no error" looks like.
+  errorValue.textContent = errorText('')
   errorRow.append(errorLabel, errorValue)
 
   const footer = document.createElement('div')
@@ -233,14 +301,6 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo): DebugOver
   panel.append(header, grid, errorRow, footer)
   if (root !== null) root.append(panel)
 
-  const set = (key: string, text: string): string => {
-    const shown = debugRowText(key, text)
-    const value = values[key]
-    if (value === undefined) return shown
-    value.textContent = shown
-    return shown
-  }
-
   // FPS is measured by the renderer, so the overlay keeps its own samples and reports them
   // through `set` like every other row does.
   const samples: number[] = []
@@ -251,7 +311,7 @@ export function mountDebugOverlay(root: HTMLElement, info: DebugInfo): DebugOver
     set,
     measureFps,
     reportError(message: string): void {
-      errorValue.textContent = message
+      errorValue.textContent = errorText(message)
     },
   }
 }

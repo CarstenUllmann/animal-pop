@@ -987,3 +987,44 @@ body {
   font-size: 0.62rem;
   color: #6c7aa5;
 }
+
+/* ------------------------------------------------------------------ */
+/* Debug rows read at tablet distance (SPEC §13, §14.3, issue #18)    */
+/* ------------------------------------------------------------------ */
+
+/* The overlay is read from across the room on the tablet, not from arm's length, so the rows carry
+   their own explicit numbers instead of inheriting the small base `.debug` sets. These rules are
+   appended after every existing rule and change nothing earlier; the descendant combinator is what
+   makes them win. The numbers stay plain pixels because `clamp()` is Chrome 79 and the engine baseline
+   in SPEC §2 forbids it here, and a `rem` size would just re-inherit the base being replaced. */
+.debug .debug__rows .debug__value {
+  font-size: 22px;
+  line-height: 1.4;
+}
+
+/* SPEC §13 sizes the numerals she reads at 40-56px; the labels are the smaller line that names the
+   number, and the value is what an adult reads from the doorway. */
+.debug .debug__rows .debug__label {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* The last error is the row the overlay is opened for, so it reads at the same size as the values.
+   `ui/debug.ts` deliberately does not truncate it, which is why the row needs room for a line. */
+.debug .debug__error-value {
+  font-size: 22px;
+  line-height: 1.4;
+}
+
+.debug .debug__error-label {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* The trace is the one row that is a list of lines rather than a single glance, and the panel is capped
+   at the tablet's height, so it keeps a smaller size: at the row size a whole boot trace pushes the
+   numbers off screen, and the values are what has to be readable without scrolling. */
+.debug .debug__rows .debug__value--trace {
+  font-size: 15px;
+  line-height: 1.4;
+}

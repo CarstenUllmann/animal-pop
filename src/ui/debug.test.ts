@@ -1,14 +1,165 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { ANIMAL_IDS } from '../game/animalIds'
+import { bubblesForLevel, createLevel, goalTargetForLevel } from '../game/level'
+import { readSave, toSaveState, writeSave, type SaveContext } from '../game/save'
+import type { KeyValueStore } from '../game/types'
+import { describeError } from './bootlog'
 import {
+  DEBUG_ROWS,
+  MAX_VALUE_LENGTH,
+  createRowModel,
   debugRowText,
+  errorText,
   goalsText,
   isDebugRow,
-  MAX_VALUE_LENGTH,
   nextLevelClick,
   parseDebugFlag,
   rowText,
   updateFps,
 } from './debug'
+
+/**
+ * Issue #18: the overlay is the only way to read the tablet, so it has to be live and readable from
+ * across the room. Vitest runs in the node environment (vitest.config.ts), so the overlay cannot be
+ * mounted in a test - what can be proved here is the pure layer, plus the shipped sources read as text:
+ * the stylesheet, the way `styles.test.ts` reads it, and what `main.ts` actually reports, the way
+ * `baseline.test.ts` reads those.
+ */
+
+const SRC = dirname(fileURLToPath(import.meta.url))
+const css = readFileSync(join(SRC, '..', 'style.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+const mainSource = readFileSync(join(SRC, '..', 'main.ts'), 'utf8')
+const debugSource = readFileSync(join(SRC, 'debug.ts'), 'utf8')
+
+function rule(selector: string): string {
+  const start = css.indexOf(`${selector} {`)
+  if (start === -1) return ''
+  return css.slice(start, css.indexOf('}', start))
+}
+
+/** A size the test can compare against the acceptance floor. -1 means the rule inherits, which is the
+ *  thing issue #18 is complaining about. */
+function fontPx(selector: string): number {
+  const match = /font-size:\s*(\d+)px/.exec(rule(selector))
+  return match === null ? -1 : Number(match[1])
+}
+
+/** The same blanking `baseline.test.ts` uses, so a scan sees code rather than prose naming a banned thing. */
+function codeOnly(text: string): string {
+  let out = ''
+  let i = 0
+  while (i < text.length) {
+    const c = text[i]
+    if (c === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i += 1
+      continue
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) {
+        if (text[i] === '\n') out += '\n'
+        i += 1
+      }
+      i += 2
+      continue
+    }
+    out += c
+    i += 1
+  }
+  return out
+}
+
+function uniqueMatches(text: string, pattern: RegExp): string[] {
+  const found: string[] = []
+  let match = pattern.exec(text)
+  while (match !== null) {
+    const value = match[1]
+    if (value !== undefined && !found.includes(value)) found.push(value)
+    match = pattern.exec(text)
+  }
+  return found
+}
+
+function functionBlock(source: string, header: string): string {
+  const start = source.indexOf(header)
+  if (start === -1) return ''
+  let depth = 0
+  for (let i = source.indexOf('{', start); i < source.length; i++) {
+    if (source[i] === '{') depth += 1
+    else if (source[i] === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(start, i + 1)
+    }
+  }
+  return ''
+}
+
+/** What runs when `debug.ts` is imported, as opposed to what runs when one of its functions is called. */
+function runsAtLoad(text: string): string[] {
+  const offenders: string[] = []
+  let depth = 0
+  for (const line of codeOnly(text).split('\n')) {
+    const trimmed = line.trim()
+    if (depth === 0 && trimmed !== '') {
+      const declares = /^(import|export|function|interface|type)\b/.test(trimmed) || /^[})\]]/.test(trimmed)
+      // A declaration is a definition; only a value computed by a call runs when the module is imported.
+      const computes = /^(export )?(const|let|var)\b/.test(trimmed) && (trimmed.includes('(') || trimmed.includes('new '))
+      if (!declares || computes) offenders.push(trimmed)
+    }
+    for (const c of line) {
+      if (c === '{' || c === '[' || c === '(') depth += 1
+      else if (c === '}' || c === ']' || c === ')') depth -= 1
+    }
+  }
+  return offenders
+}
+
+/** The two rows `debug.ts` reports through its own path - the frame samples and the trace subscription -
+ *  because they are numbers only the overlay measures. Every other row has to be reported by the game. */
+const SELF_REPORTED = ['fps', 'boot']
+
+/** The mount object names two things differently from the row key it fills: `bubbles` shows as the rack
+ *  row (SPEC §8), `bootLog` as the trace row (SPEC §14.3, issue #23). */
+function rowForMountKey(key: string): string {
+  if (key === 'bubbles') return 'rack'
+  if (key === 'bootLog') return 'boot'
+  return key
+}
+
+function mountInfoKeys(source: string): string[] {
+  const start = source.indexOf('mountDebugOverlay(')
+  if (start === -1) return []
+  const end = source.indexOf(': null', start)
+  const call = source.slice(start, end === -1 ? source.length : end)
+  return uniqueMatches(call, /^\s+([A-Za-z][A-Za-z0-9]*):/gm)
+}
+
+/** A row is only as live as the last thing the game reported for it, so a row that nothing reports after
+ *  mount can never be live (issue #18). */
+function rowsThatCanNeverMove(source: string): string[] {
+  const reported = uniqueMatches(source, /debug\.set\('([a-z]+)'/g)
+  const missing: string[] = []
+  for (const row of DEBUG_ROWS) {
+    if (row.fixed) continue
+    if (reported.includes(row.key)) continue
+    if (SELF_REPORTED.includes(row.key)) continue
+    missing.push(row.key)
+  }
+  return missing
+}
+
+function fakeStore(initial: Record<string, string> = {}): KeyValueStore {
+  const values = new Map(Object.entries(initial))
+  return {
+    read: (key: string) => values.get(key) ?? null,
+    write: (key: string, value: string) => {
+      values.set(key, value)
+      return true
+    },
+  }
+}
 
 describe('parseDebugFlag', () => {
   it.each([
@@ -78,6 +229,123 @@ describe('debug rows', () => {
   })
 })
 
+describe('the rows the overlay declares (SPEC §14.3, issue #18)', () => {
+  it('declares every field SPEC §14.3 lists, and the four numbers the panel cannot show', () => {
+    // SPEC §14.3: level, seed, animal types in play, bubbles, remaining goals, fps, last error, and the
+    // boot row from §14.1. `queue`, `balloons`, `particles` and `tier` are what the tablet cannot see
+    // without the overlay, which is why the overlay is worth opening on it.
+    for (const key of ['level', 'seed', 'animals', 'rack', 'goals', 'fps', 'boot']) {
+      expect(DEBUG_ROWS.map((row) => row.key)).toContain(key)
+    }
+    expect(DEBUG_ROWS.map((row) => row.key)).toEqual([
+      'level',
+      'seed',
+      'animals',
+      'rack',
+      'goals',
+      'queue',
+      'balloons',
+      'particles',
+      'tier',
+      'fps',
+      'boot',
+    ])
+  })
+
+  it('has exactly one row fixed by the definition rather than by a report', () => {
+    // SPEC §9.2: the session seed is generated once per install, so the seed row cannot move during a run.
+    expect(DEBUG_ROWS.filter((row) => row.fixed).map((row) => row.key)).toEqual(['seed'])
+  })
+
+  it('has something to show for every row before the game reports it', () => {
+    // A row is painted from `initial`, so the overlay cannot open with a blank line. Every row has a word of
+    // its own for before anything is reported except the roster row, which only the game can know - so that
+    // row has to be one main.ts hands over at mount (issue #18).
+    const blankAtMount = DEBUG_ROWS.filter((row) => row.initial({}) === '').map((row) => row.key)
+    expect(blankAtMount).toEqual(['animals'])
+
+    const mounted = mountInfoKeys(mainSource).map(rowForMountKey).filter((key) => key !== 'onNextLevel')
+    for (const key of blankAtMount) expect(mounted).toContain(key)
+
+    // Every key main.ts hands the overlay at mount is a declared row, so the game cannot report a key the
+    // overlay would paint nothing for. `bubbles` and `bootLog` name rows by what they show.
+    for (const key of mounted) expect(isDebugRow(key)).toBe(true)
+    for (const key of ['level', 'seed', 'animals', 'rack', 'goals', 'boot']) expect(mounted).toContain(key)
+  })
+
+  it('catches a row that can never update', () => {
+    // The scan is the acceptance test, so it has to be able to fail: `showLevel()` reports level, rack,
+    // goals and the animals in play, `reportQueue` the queue, `reportLive` the balloons, particles and tier.
+    // Nothing may be handed over at mount and never reported again, because the roster changes with the
+    // level (SPEC §9.3), so a mount snapshot would be the wrong level's truth from level 2 on. Every row is
+    // reported after mount, so this expectation is closed - and the next test shows it can still fail.
+    expect(rowsThatCanNeverMove(mainSource)).toEqual([])
+  })
+
+  it('is not vacuous: a report removed from main.ts is caught', () => {
+    const quiet = mainSource.replace(/debug\.set\('queue', numberText\(queue\.size\(\)\)\)/, '')
+    expect(rowsThatCanNeverMove(quiet)).toContain('queue')
+    expect(rowsThatCanNeverMove(quiet)).not.toEqual([])
+  })
+
+  it('reads at tablet distance, with its own pixel size rather than the small base the overlay inherits', () => {
+    // An adult reads the values from the doorway: 20px or more. The label that names a number is the
+    // smaller line, 12px or more; the trace is a list of lines rather than a glance, so it stays smaller
+    // because the panel is capped at the tablet's height (SPEC §13).
+    expect(fontPx('.debug .debug__rows .debug__value')).toBeGreaterThanOrEqual(20)
+    expect(fontPx('.debug .debug__error-value')).toBeGreaterThanOrEqual(20)
+    expect(fontPx('.debug .debug__rows .debug__label')).toBeGreaterThanOrEqual(12)
+    expect(fontPx('.debug .debug__error-label')).toBeGreaterThanOrEqual(12)
+    expect(fontPx('.debug .debug__rows .debug__value--trace')).toBeGreaterThanOrEqual(14)
+
+    // A value has to read bigger than the label naming it, and the rules are px so they cannot
+    // re-inherit the `rem` base that `baseline.test.ts` holds to the Chrome 61 engine.
+    expect(fontPx('.debug .debug__rows .debug__value')).toBeGreaterThan(fontPx('.debug .debug__rows .debug__label'))
+    expect(fontPx('.debug .debug__error-value')).toBeGreaterThan(fontPx('.debug .debug__error-label'))
+
+    // Every class `mountDebugOverlay` sets has a rule, so a row the module builds cannot be unstyled.
+    const built: string[] = []
+    for (const line of codeOnly(debugSource).split('\n')) {
+      if (!line.includes('className = ') && !line.includes('classList.toggle(')) continue
+      for (const match of line.match(/'([^']+)'/g) ?? []) {
+        for (const cls of match.slice(1, -1).split(' ')) if (!built.includes(cls)) built.push(cls)
+      }
+    }
+    expect(built).toContain('debug__value--trace')
+    const missing = built.filter((cls) => !css.includes(`.${cls}`))
+    expect(missing).toEqual([])
+  })
+})
+
+describe('the last error row (SPEC §14.3, issue #18)', () => {
+  it('shows a thrown error by name, which is what main.ts hands the row', () => {
+    expect(errorText(describeError(new TypeError('crypto.getRandomValues is not a function')))).toBe(
+      'TypeError: crypto.getRandomValues is not a function',
+    )
+  })
+
+  it('shows a rejection whose reason is not an Error', () => {
+    // `unhandledrejection` hands over whatever the promise rejected with, so the row cannot assume an Error.
+    expect(errorText(describeError('board view failed'))).toBe('board view failed')
+    expect(errorText(describeError({ code: 3, reason: 'storage is denied' }))).toBe('{"code":3,"reason":"storage is denied"}')
+    expect(errorText(describeError(null))).toBe('null')
+  })
+
+  it('never blanks the row, whatever the reason was', () => {
+    for (const reason of [new Error('boom'), 'boom', { code: 3 }, undefined, null, 0, '', '   ']) {
+      expect(errorText(describeError(reason))).not.toBe('')
+    }
+    // 'none' is the word the row shows before anything is reported, so the row and the helper agree.
+    expect(errorText('')).toBe('none')
+  })
+
+  it('keeps the error whole, past the cap every other row has', () => {
+    const long = 'x'.repeat(MAX_VALUE_LENGTH + 40)
+    expect(errorText(long)).toBe(long)
+    expect(errorText(long)).not.toContain('…')
+  })
+})
+
 describe('next level button', () => {
   it('does nothing while the button is disabled, which is what a click cannot be trusted not to do', () => {
     const clicks: string[] = []
@@ -91,5 +359,98 @@ describe('next level button', () => {
     const clicks: string[] = []
     nextLevelClick(() => clicks.push('advanced'), true)
     expect(clicks).toEqual(['advanced'])
+  })
+
+  it('leaves the save describing the same level the rows show after an advance', () => {
+    // The pure part of main.ts's `nextLevel()`: the level it deals and the save written from that state.
+    // `celebration.stop()`, `party.hidden`, `queue.clear()` and the render are main.ts wiring, so the node
+    // test can only reach the numbers - which is what the rows show.
+    const context: SaveContext = { muted: false, levelsCompleted: 0 }
+    const store = fakeStore()
+    // ANIMAL_IDS is the roster ANIMAL_POOL is built from (animalIds.ts), so the test can deal a level
+    // without the asset graph.
+    const dealt = createLevel(1, 0x3039, ANIMAL_IDS)
+    expect(writeSave(dealt, context, store)).toBe(true)
+
+    const advanced = createLevel(dealt.level + 1, dealt.sessionSeed, ANIMAL_IDS)
+    expect(writeSave(advanced, context, store)).toBe(true)
+
+    // What the next launch reads back has to be the level the rows show, or the overlay disagrees with the save.
+    const saved = readSave(store)
+    expect(saved).toEqual(toSaveState(advanced, context))
+    if (saved === null) return
+
+    // A level just dealt has earned nothing, so each goal row shows the ramp's whole target as still missing.
+    const target = goalTargetForLevel(2)
+    const rows = saved.goals.map((goal) => ({ label: goal.animal, current: target - goal.remaining, needed: target }))
+    expect(rows.map((row) => row.current)).toEqual([0, 0])
+
+    // Read the rows through the model, because that is the path `mountDebugOverlay` paints from: the model
+    // formats each value as its row declares it, so the seed row shows the hex the save holds rather than the
+    // number, and the test cannot quietly measure a row against a helper the overlay does not use (issue #18).
+    const model = createRowModel({ level: saved.level, seed: saved.sessionSeed, bubbles: saved.bubbles, goals: rows })
+    expect(model.text('level')).toBe('2')
+    // SPEC §9.2: an advance deals a new level from the same per-install seed, so the seed row does not move.
+    expect(model.text('seed')).toBe('0x3039')
+    expect(model.text('rack')).toBe(String(bubblesForLevel(2)))
+    expect(model.text('goals')).toBe(`${saved.goals[0]?.animal} ${target} left, ${saved.goals[1]?.animal} ${target} left`)
+  })
+
+  it('advances through the same report path that wrote the save (main.ts wiring)', () => {
+    // The button is only enabled for a handler main.ts supplies, so a click can never call a level the
+    // child has not finished. The handler writes the save and then reports, so the rows cannot lag it.
+    expect(mainSource).toContain('onNextLevel: nextLevel')
+    const advance = functionBlock(mainSource, 'function nextLevel()')
+    expect(advance).toContain('state.level + 1')
+    expect(advance).toContain('writeSave(')
+    // The report happens on the render's then, so the row is written from the state the save was written from.
+    expect(advance).toContain('.then(showLevel)')
+    expect(functionBlock(mainSource, 'function showLevel()')).toContain("debug.set('level'")
+  })
+})
+
+describe('off by default (SPEC §14.3, issue #18)', () => {
+  it('runs nothing at module load', () => {
+    // Every line at depth 0 in debug.ts is a declaration: the module computes no value and touches no
+    // screen when it is imported, so a launch that never opens the overlay pays for the import alone.
+    // The node environment is the proof on this test's own side - `document` is not defined here and the
+    // import at the top of this file still succeeds.
+    expect(typeof document).toBe('undefined')
+    expect(runsAtLoad(debugSource)).toEqual([])
+  })
+
+  it('reads the flag from the URL only, never from storage, so a debug run cannot leak into the next launch', () => {
+    const code = codeOnly(debugSource)
+    for (const banned of ['localStorage', 'sessionStorage', 'location', 'window.', 'navigator.']) {
+      expect(code).not.toContain(banned)
+    }
+  })
+
+  it('mounts nothing without the flag, and the report calls cost nothing when it is off', () => {
+    expect(mainSource).toMatch(/parseDebugFlag\([^)]*\)\s*\?\s*mountDebugOverlay/)
+    expect(mainSource).toMatch(/const debug = [\s\S]{0,400}: null/)
+    expect(functionBlock(mainSource, 'function showLevel()')).toContain('if (debug === null) return')
+    // The frame sampling loop is the only thing the overlay keeps running, and it runs only for a mounted one.
+    expect(mainSource).toMatch(/if \(debug !== null\) \{[^}]*measureFps/)
+  })
+})
+
+describe('no network, no external tooling (SPEC §14.3)', () => {
+  it('names nothing that reaches outside the device', () => {
+    const code = codeOnly(debugSource)
+    for (const banned of ['fetch(', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'import(', 'beacon(']) {
+      expect(code).not.toContain(banned)
+    }
+    // The only import is app-internal: the overlay reads the boot trace, and nothing outside the app.
+    expect(uniqueMatches(debugSource, /from '([^']+)'/g)).toEqual(['./bootlog'])
+  })
+
+  it('writes nothing, so a debug run cannot change the save it is reading', () => {
+    // SPEC §14.1 reserves `pop-pals.v1` for the save and `pop-pals.boot.v1` for the trace; the overlay
+    // only displays what the game reports, so it must name neither.
+    const code = codeOnly(debugSource)
+    for (const banned of ['pop-pals', 'setItem', '.write(', 'JSON.stringify']) {
+      expect(code).not.toContain(banned)
+    }
   })
 })

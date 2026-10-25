@@ -313,6 +313,9 @@ function start(root: HTMLElement): void {
     debug.set('level', numberText(state.level))
     debug.set('rack', numberText(state.bubbles))
     debug.set('goals', goalsText(goalRows()))
+    // Issue #18: the roster is reported with the rest of the level, because the animals in play change
+    // with the level. Handed over once at mount, this row would keep showing level 1's roster.
+    debug.set('animals', animalsText(state.roster))
     reportQueue()
     reportLive(debug, celebration)
   }
