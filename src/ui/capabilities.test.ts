@@ -100,7 +100,14 @@ describe('engineToken', () => {
     expect(engineToken(webView)).toBe('Chrome/109')
   })
 
-  it('says unknown when there is no Chrome token to read', () => {
+  it('names the engine for Firefox, which is the engine the installed app runs in (ADR-0002)', () => {
+    // Android Firefox, as the PWA wrapper reports it. A token that only read Chrome said
+    // `unknown engine` for every launch the child actually makes.
+    const firefox = 'Mozilla/5.0 (Android 8.1.0; Mobile; rv:158.0) Gecko/158.0 Firefox/158.0'
+    expect(engineToken(firefox)).toBe('Firefox/158')
+  })
+
+  it('says unknown when there is no engine token to read', () => {
     expect(engineToken('Mozilla/5.0 (compatible; SomeBrowser/12.0)')).toBe('unknown engine')
   })
 })

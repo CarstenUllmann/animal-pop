@@ -89,14 +89,22 @@ export function capabilityFlags(snapshot: EngineSnapshot): string[] {
 }
 
 /**
- * The engine that booted this run, as its Chrome version token.
+ * The engine that booted this run, as its version token.
  *
  * The browser and the installed app report different numbers here, because standalone uses the
  * System WebView rather than the browser build. Since the trace is persisted and Chrome uses one
  * profile for both, reading the trace from the browser tells us which engine the crashed run ran
  * in (issue #23).
+ *
+ * The install path is Firefox's PWA wrapper (ADR-0002), so a token that only recognised Chromium read
+ * `unknown engine` for every launch the child actually makes. It now names whichever engine the user
+ * agent claims: Chrome first, because a Chrome-based UA reports its own version even when it mentions
+ * Firefox, then Firefox itself. `unknown engine` is still the honest answer for anything else.
  */
 export function engineToken(userAgent: string): string {
-  const match = /Chrome\/(\d+)/.exec(userAgent)
-  return match === null ? 'unknown engine' : `Chrome/${match[1]}`
+  const chrome = /Chrome\/(\d+)/.exec(userAgent)
+  if (chrome !== null) return `Chrome/${chrome[1]}`
+  const firefox = /Firefox\/(\d+)/.exec(userAgent)
+  if (firefox !== null) return `Firefox/${firefox[1]}`
+  return 'unknown engine'
 }
