@@ -33,6 +33,31 @@ export interface LayoutMetrics {
   portrait: boolean
   /** The smallest tappable element is too small for this viewport. */
   tapTargetTooSmall: boolean
+  /**
+   * Issue #10: the panel has to show everything at once, so the fit is a number the module can be held to
+   * rather than a claim in a comment. The panel row inside its padding is what the level label's reserved
+   * place, the two goal cards and the wrapped rack have to share, and nothing there scrolls.
+   */
+  /** The panel column and row, and the panel row inside its own padding. */
+  panelColumnPx: number
+  panelRowPx: number
+  panelContentPx: number
+  /** What the level label and the two goal cards take before the rack is allowed any. */
+  panelChromePx: number
+  /** SPEC §8.2's full rack of up to 39 bubbles, the wrapped rows it needs, and the rows fit at once. */
+  rackBubbles: number
+  rackRows: number
+  rackRowsFit: number
+  /** The rack box at `rackBubbles`, row spacing charged on every row as the stylesheet charges it. */
+  rackHeightPx: number
+  /** The whole rack is visible at once. A rack that does not fit is clipped, never scrolled. */
+  rackFitsPanel: boolean
+  /** The board box (square, SPEC §13) against the area the fractions give it. */
+  boardPx: number
+  boardFitsArea: boolean
+  /** Shares of the page area: the board is the half she plays on, so it has to be the bigger one. */
+  boardAreaFraction: number
+  panelAreaFraction: number
 }
 
 /**
@@ -59,20 +84,53 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   const cell = between(Math.floor(Math.min(boardHeight / grid.rows, boardWidth / grid.cols)), LAYOUT.cellMinPx, LAYOUT.cellMaxPx)
 
   const bubblePx = between(Math.round(cell * 0.26), LAYOUT.bubblePxMin, LAYOUT.bubblePxMax)
+  const goalPx = between(Math.round(cell * 0.33), 28, FONTS.goalPx)
+  const levelPx = between(Math.round(cell * 0.46), FONTS.levelPx, 56)
+
+  // Issue #10: the fit is measured against the panel and board areas the fractions give, using the chrome
+  // the stylesheet actually reserves (LAYOUT.chrome mirrors it), so a rack that fits here fits on screen.
+  const panelColumnPx = Math.round(viewport.width * panelWidthFraction)
+  const panelRowPx = Math.round(viewport.height * panelHeightFraction)
+  const panelContentPx = panelRowPx - 2 * LAYOUT.chrome.panelPaddingPx
+  // The two goal cards are charged as two stacked rows, which is the worst case: they sit side by side when
+  // the panel is wide enough (issue #19), so the fit holds either way. The level label's box is the reserved
+  // place, and the mute is positioned rather than flowed, so it takes no row of its own.
+  const panelChromePx = LAYOUT.interactiveMinPx + 2 * goalCardRowPx(goalPx)
+  const rackRowPx = bubblePx + LAYOUT.chrome.rackRowPx
+  const rackColumns = rackColumnsFor(rackWidthFor(panelColumnPx), bubblePx)
+  const rackBubbles = LAYOUT.rackSizingBubbles
+  const rackRows = Math.ceil(rackBubbles / rackColumns)
+  const rackRowsFit = Math.max(0, Math.floor((panelContentPx - panelChromePx - 2 * LAYOUT.chrome.rackPaddingPx) / rackRowPx))
+  const boardPx = cell * Math.max(grid.rows, grid.cols)
 
   return {
     panelWidthFraction,
     panelHeightFraction,
     boardFraction,
     cell,
-    levelPx: between(Math.round(cell * 0.46), FONTS.levelPx, 56),
-    goalPx: between(Math.round(cell * 0.33), 28, FONTS.goalPx),
+    levelPx,
+    goalPx,
     bubblePx,
-    rackColumns: rackColumnsFor(rackWidthFor(viewport, panelWidthFraction), bubblePx),
+    rackColumns,
     playPx: between(Math.round(cell * 0.90), LAYOUT.tapTargetCssPx, LAYOUT.cellMaxPx),
     interactivePx: LAYOUT.interactiveMinPx,
     portrait,
     tapTargetTooSmall: cell < LAYOUT.tapTargetCssPx,
+    panelColumnPx,
+    panelRowPx,
+    panelContentPx,
+    panelChromePx,
+    rackBubbles,
+    rackRows,
+    rackRowsFit,
+    rackHeightPx: rackRows * rackRowPx + 2 * LAYOUT.chrome.rackPaddingPx,
+    rackFitsPanel: rackRowsFit >= rackRows,
+    boardPx,
+    // The board is only pushed past its area when `cellMinPx` clamps a device smaller than SPEC §13 assumes,
+    // which is the case `tapTargetTooSmall` already reports rather than a layout that can be fixed here.
+    boardFitsArea: boardPx <= boardHeight && boardPx <= boardWidth,
+    boardAreaFraction: 1 - panelWidthFraction * panelHeightFraction,
+    panelAreaFraction: panelWidthFraction * panelHeightFraction,
   }
 }
 
@@ -102,16 +160,30 @@ export function applyLayout(root: HTMLElement, viewport: Viewport, grid: GridSiz
 
 /** SPEC §8.2: 3-4 bubbles per row, chosen so the rack fits the panel without scrolling. */
 function rackColumnsFor(rackWidth: number, bubblePx: number): number {
-  const gap = Math.round(bubblePx * 0.25)
-  const fits = Math.floor((rackWidth + gap) / (bubblePx + gap))
+  // The row spacing is `LAYOUT.chrome.rackRowPx`, the stylesheet's own value, rather than a fraction of the
+  // bubble: it is the same 6 px whatever the bubble size, and reading it as a fraction made the estimate
+  // disagree with the rule. Charging no horizontal spacing keeps this the conservative side.
+  const rowWidth = bubblePx + LAYOUT.chrome.rackRowPx
+  const fits = Math.floor((rackWidth + LAYOUT.chrome.rackRowPx) / rowWidth)
   return between(fits, LAYOUT.rackColumnsMin, LAYOUT.rackColumnsMax)
 }
 
-/** The width the rack has: the panel column in landscape, the page width in portrait, less its padding. */
-function rackWidthFor(viewport: Viewport, panelWidthFraction: number): number {
-  // The padding is the stylesheet's own rem value, so this is an estimate; the row count is capped at
-  // SPEC §8.2's 3-4 anyway, and on the target device the panel column always has room for 4.
-  return Math.max(0, Math.round(viewport.width * panelWidthFraction) - 24)
+/** The width the rack has: the panel's content box, less the chrome the stylesheet reserves around it. */
+function rackWidthFor(panelColumnPx: number): number {
+  // Every value here mirrors `style.css`, so the rack is measured against the panel it is painted inside
+  // rather than against a round number that happened to work on the target device (issue #10).
+  return Math.max(
+    0,
+    panelColumnPx -
+      2 * LAYOUT.chrome.panelPaddingXPx -
+      LAYOUT.chrome.rackMarginPx -
+      2 * LAYOUT.chrome.rackPaddingXPx,
+  )
+}
+
+/** A goal card row. The ring is taller than the numeral it holds (SPEC §8.1), so the ring sets the height. */
+function goalCardRowPx(goalPx: number): number {
+  return Math.max(LAYOUT.chrome.goalRingPx, goalPx) + 2 * LAYOUT.chrome.goalPaddingPx
 }
 
 /** CSS `clamp()` is newer than the engine (SPEC §2), so the bounds are computed here instead. */

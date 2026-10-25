@@ -147,6 +147,34 @@ export const LAYOUT = {
   bubblePxMax: 26,
   rackColumnsMin: 3,
   rackColumnsMax: 4,
+  /**
+   * SPEC §8.2: the rack is sized so a full rack of up to 39 fits the panel height at once. The measured
+   * plateau is 35 (SPEC §9.1), so 39 is the ceiling the panel has to hold rather than a level she plays;
+   * the layout charges it against the panel row, because the panel cannot scroll (issue #10).
+   */
+  rackSizingBubbles: 39,
+  /**
+   * The chrome the stylesheet reserves inside the panel and the board area. Each value is `style.css`'s own
+   * declaration read at 1rem = 16 CSS px, rounded up: the layout model may not charge less than the rule
+   * actually reserves, so `styles.test.ts` compares every value below against the stylesheet and fails if
+   * either side drifts. That is what turns "the rack fits the panel" from an estimate into a checked number.
+   */
+  chrome: {
+    /** `.panel` padding: 0.8rem vertical, 1rem across. */
+    panelPaddingPx: 13,
+    panelPaddingXPx: 16,
+    /** `.board-area` padding: the margin SPEC §13 asks the board to be centred inside. */
+    boardAreaPaddingPx: 16,
+    /** `.goal` padding, and the ring the card row has to hold, which is taller than its numeral. */
+    goalPaddingPx: 7,
+    goalRingPx: 44,
+    /** `.rack` padding: 0.5rem vertical, 0.8rem across, plus the 0.6rem it stands away from the panel edge. */
+    rackPaddingPx: 8,
+    rackPaddingXPx: 13,
+    rackMarginPx: 10,
+    /** `.rack__bubble` margin-bottom: the row spacing, which the stylesheet charges on every row. */
+    rackRowPx: 6,
+  },
   /** Nothing interactive is smaller than this (SPEC §13): the mute target and the numeral's box. */
   interactiveMinPx: 64,
   /** Device pixel ratio cap (SPEC §5). */

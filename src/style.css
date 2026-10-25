@@ -435,6 +435,11 @@ body {
   flex-direction: column;
   align-items: flex-start;
   min-height: 0;
+  /* Issue #10: "never scrolls" has to be enforced rather than intended. A flex item's minimum size is its
+     content, so a rack taller than the panel's share grows the panel row and pushes the board out of its
+     own; clipping is what keeps the shell the size `ui/layout.ts` gave it. `min-height: 0` above is the
+     other half of the same rule. */
+  overflow: hidden;
   padding: 0.8rem 1rem;
   background: var(--panel);
   border-right: 1px solid rgba(123, 223, 242, 0.2);
@@ -546,6 +551,11 @@ body {
   grid-template-columns: repeat(4, 22px);
   grid-template-columns: repeat(var(--rack-columns, 4), var(--bubble-px, 22px));
   align-self: stretch;
+  /* Issue #10: the rack reserves a place inside the panel, and what does not fit is clipped there rather
+     than scrolled or pushed onto the board. The 64 px is the block's place - a bubble stays inside
+     SPEC §8.2's 22-26 px, so the block shrinks to its rows while the place it reserved does not. */
+  min-height: var(--tap-min-px, 64px);
+  overflow: hidden;
   padding: 0.5rem 0.8rem;
   margin-left: 0.6rem;
   border-radius: 0.6rem;

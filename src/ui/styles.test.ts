@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { CELEBRATION } from '../game/constants'
+import { CELEBRATION, FONTS, LAYOUT } from '../game/constants'
 import { CONFIRM_GLYPH, SHAKE_MS } from './adultReset'
 
 /**
@@ -32,6 +32,52 @@ function mediaBlock(): string {
     }
   }
   return ''
+}
+
+/**
+ * Issue #10: `html,` and `body` are written on two lines, so that rule has to be matched with its selector
+ * normalised. Every other selector here is on one line, which is why `rule()` above can look for it as it is.
+ */
+function ruleFor(selector: string): string {
+  const needle = selector.replace(/\s+/g, '')
+  let i = 0
+  while (i < css.length) {
+    const open = css.indexOf('{', i)
+    if (open === -1) return ''
+    const close = css.indexOf('}', open)
+    if (close === -1) return ''
+    // A `}` can sit in front of the selector when the previous rule was a block inside a block, as in
+    // `@keyframes`, so it is not part of the selector.
+    if (css.slice(i, open).replace(/\s+/g, '').replace('}', '') === needle) return css.slice(open, close + 1)
+    i = close + 1
+  }
+  return ''
+}
+
+/**
+ * The CSS px a declaration reserves, read at 1rem = 16 px. `LAYOUT.chrome` mirrors these numbers because
+ * `computeLayout` charges them against the panel and board areas, so the fit it reports has to be measured
+ * against the chrome this file actually reserves.
+ */
+function dimensionFor(selector: string, property: string, index: number): number | null {
+  const block = ruleFor(selector)
+  const match = block.match(new RegExp(`(?:^|[;{])\\s*${property}:([^;}]+)`))
+  if (!match) return null
+  const value = (match[1] || '').trim().split(/\s+/)[index]
+  if (!value) return null
+  const number = parseFloat(value)
+  if (Number.isNaN(number)) return null
+  return value.endsWith('rem') ? Math.ceil(number * 16) : number
+}
+
+/** The custom properties the shell reads, and the ones `applyLayout` writes. vitest runs in node (see
+ *  `vitest.config.ts`), so there is no element to write them onto and the two lists are compared as text. */
+function customPropertiesRead(): string[] {
+  return (css.match(/var\(\s*(--[a-z0-9-]+)/g) || []).map((text) => text.slice(4).trim())
+}
+
+function layoutWrites(name: string): boolean {
+  return readFileSync(join(SRC, 'layout.ts'), 'utf8').includes(`setProperty('${name}'`)
 }
 
 describe('celebration stylesheet', () => {
@@ -100,6 +146,17 @@ describe('shell (SPEC §13, issue #10)', () => {
   it('the level label and the mute have reserved places at least as big as the smallest target', () => {
     expect(rule('.panel__level')).toContain('min-height: var(--tap-min-px, 64px)')
     expect(rule('.mute')).toContain('var(--tap-min-px, 64px)')
+    // Issue #10 extends the same rule across the shell: the play arrow on the board and the rack block. A
+    // rack bubble stays inside SPEC §8.2's 22-26 px, so the 64 px is the place the block reserves rather
+    // than a bubble's size, and the block is what shrinks when the panel has less than the row it needs.
+    expect(rule('.next')).toContain('min-width: var(--tap-min-px, 64px)')
+    expect(rule('.next')).toContain('min-height: var(--tap-min-px, 64px)')
+    expect(rule('.rack')).toContain('min-height: var(--tap-min-px, 64px)')
+    expect(rule('.rack__bubble')).not.toMatch(/min-(width|height)/)
+    // Every place reads the number the layout module writes, so the reserved 64 px cannot drift from it.
+    expect(rule('.panel__level')).toContain(`min-height: var(--tap-min-px, ${LAYOUT.interactiveMinPx}px)`)
+    expect(rule('.next')).toContain(`var(--tap-min-px, ${LAYOUT.interactiveMinPx}px)`)
+    expect(rule('.rack')).toContain(`var(--tap-min-px, ${LAYOUT.interactiveMinPx}px)`)
   })
 })
 
@@ -173,5 +230,110 @@ describe('mute stylesheet', () => {
     expect(css).toContain('.mute__waves')
     expect(css).toContain('.mute__cross')
     expect(css).toContain(".mute[aria-pressed='true']")
+  })
+})
+
+/**
+ * Issue #10's acceptance criteria, held to the stylesheet as the file that actually paints them. These
+ * tests run in node, so they can only check what the rules say; what the rules do on the tablet is the part
+ * that has to be looked at on the device.
+ */
+describe('the shell cannot scroll (SPEC §13, issue #10)', () => {
+  it('the page itself is pinned', () => {
+    const page = ruleFor('html, body')
+    expect(page).toContain('height: 100%')
+    expect(page).toContain('overflow: hidden')
+    // Fixed rather than flowed, so the Chrome UI taking or giving back a band cannot make a scrollable page.
+    expect(ruleFor('body')).toContain('position: fixed')
+  })
+
+  it('nothing in the shell, grid, panel, board or rack can create a scroll', () => {
+    for (const selector of ['.game', '.board-area', '.panel', '.board', '.rack']) {
+      const block = ruleFor(selector)
+      // A rule that is not there would pass `not.toMatch` for everything, so it has to be present to read.
+      expect(block).not.toBe('')
+      expect(block).not.toMatch(/overflow: (auto|scroll)/)
+    }
+    // Clipping is the mechanism SPEC §13 asks for: the rack wraps inside the panel and what does not fit is
+    // clipped there rather than pushed onto the board. `min-height: 0` is the other half of that, because a
+    // flex item's minimum size is its content, and a rack that grows its row moves the board.
+    expect(ruleFor('.panel')).toContain('overflow: hidden')
+    expect(ruleFor('.rack')).toContain('overflow: hidden')
+    expect(ruleFor('.panel')).toContain('min-height: 0')
+    expect(ruleFor('.game')).toContain('min-height: 0')
+  })
+})
+
+describe('the shell sizes itself from the custom properties the layout writes (SPEC §13, issue #10)', () => {
+  it('every custom property the shell reads is one `applyLayout` writes, or is defined at `:root`', () => {
+    for (const name of customPropertiesRead()) {
+      expect(layoutWrites(name) || css.includes(`${name}:`)).toBe(true)
+    }
+    for (const name of ['--panel-width-fraction', '--panel-height-fraction']) {
+      expect(ruleFor('.game')).toContain(`var(${name}`)
+      expect(layoutWrites(name)).toBe(true)
+    }
+    for (const name of ['--cell', '--cols', '--rows']) {
+      expect(ruleFor('.board')).toContain(`var(${name})`)
+      expect(layoutWrites(name)).toBe(true)
+    }
+    for (const name of ['--rack-columns', '--bubble-px']) {
+      expect(ruleFor('.rack')).toContain(`var(${name}`)
+      expect(layoutWrites(name)).toBe(true)
+    }
+  })
+
+  it('the plain value beside each custom property is the fallback, not the layout (SPEC §6)', () => {
+    // Nothing here is a fixed pixel layout: each rule states its value twice, the plain one for an engine
+    // that cannot read custom properties and the derived one for the engine the game runs on. Where the
+    // layout module has a constant for the number, the fallback is held to it.
+    expect(ruleFor('.next')).toContain(`var(--play-px, ${LAYOUT.tapTargetCssPx}px)`)
+    expect(ruleFor('.rack')).toContain(`var(--bubble-px, ${LAYOUT.bubblePxMin}px)`)
+    expect(ruleFor('.rack')).toContain(`var(--rack-columns, ${LAYOUT.rackColumnsMax})`)
+    expect(ruleFor('.game')).toContain(`var(--panel-width-fraction, ${LAYOUT.panelWidthFraction})`)
+    expect(ruleFor('.panel__level-value')).toContain(`var(--level-px, ${FONTS.levelPx}px)`)
+    expect(ruleFor('.goal__numeral')).toContain(`var(--goal-px, ${FONTS.goalPx}px)`)
+  })
+
+  it('the chrome the layout model charges against the panel is the chrome this file reserves', () => {
+    // `computeLayout` measures the rack against the panel row inside its padding, using these numbers. If a
+    // rule here changes without the mirror in `LAYOUT.chrome` changing with it, `rackFitsPanel` is measuring
+    // a panel the stylesheet does not paint.
+    expect(dimensionFor('.panel', 'padding', 0)).toBe(LAYOUT.chrome.panelPaddingPx)
+    expect(dimensionFor('.panel', 'padding', 1)).toBe(LAYOUT.chrome.panelPaddingXPx)
+    expect(dimensionFor('.board-area', 'padding', 0)).toBe(LAYOUT.chrome.boardAreaPaddingPx)
+    expect(dimensionFor('.goal', 'padding', 0)).toBe(LAYOUT.chrome.goalPaddingPx)
+    expect(dimensionFor('.goal__ring', 'width', 0)).toBe(LAYOUT.chrome.goalRingPx)
+    expect(dimensionFor('.rack', 'padding', 0)).toBe(LAYOUT.chrome.rackPaddingPx)
+    expect(dimensionFor('.rack', 'padding', 1)).toBe(LAYOUT.chrome.rackPaddingXPx)
+    expect(dimensionFor('.rack', 'margin-left', 0)).toBe(LAYOUT.chrome.rackMarginPx)
+    expect(dimensionFor('.rack__bubble', 'margin-bottom', 0)).toBe(LAYOUT.chrome.rackRowPx)
+  })
+})
+
+describe('the board is the dominant half of the shell (SPEC §13, issue #10)', () => {
+  it('the grid gives the panel the smaller track and the board the rest, in both orientations', () => {
+    const shell = ruleFor('.game')
+    expect(shell).toContain('grid-template-columns: 30% 70%')
+    expect(shell).toContain('1fr')
+
+    // SPEC §13's 28-32% panel column, and the board taking whatever the panel does not.
+    expect(LAYOUT.panelWidthFraction).toBeGreaterThanOrEqual(0.28)
+    expect(LAYOUT.panelWidthFraction).toBeLessThanOrEqual(0.32)
+    expect(LAYOUT.landscapeBoardFraction).toBeGreaterThan(LAYOUT.panelWidthFraction)
+
+    // Portrait: the panel is the row above the board, so the board keeps the `1fr` row. The board area is
+    // moved into that second track by the portrait rules, which is what makes the board the bigger half.
+    expect(LAYOUT.portraitBoardFraction).toBeGreaterThan(1 - LAYOUT.portraitBoardFraction)
+    expect(ruleFor('.board-area')).toContain('grid-column: 2')
+    expect(ruleFor('.game.is-portrait .board-area')).toContain('grid-row: 2')
+  })
+
+  it('the board is sized from the cell the layout derives, and the party is an overlay over it', () => {
+    // The board's own box is the derived cell times the grid, not a pixel size; the celebration claims no
+    // track of its own (issue #12), which is what leaves the room for the 90 CSS px cell.
+    expect(ruleFor('.board')).toContain('calc(var(--cell) * var(--cols))')
+    expect(ruleFor('.board')).toContain('calc(var(--cell) * var(--rows))')
+    expect(ruleFor('.board')).toContain('overflow: hidden')
   })
 })
