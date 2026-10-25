@@ -106,8 +106,32 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
     expect(spawn).toContain("shape.className = 'balloon__shape'")
     expect(spawn).toContain('float.append(shape)')
     expect(spawn).toContain('el.append(float)')
-    expect(spawn).toContain("el.classList.add('balloon--popped')")
+    // Issue #35: the pop is its own step now, so the button only wires the tap.
+    expect(spawn).toContain('popBalloon(balloon)')
     expect(spawn).not.toContain("el.style.transform")
+  })
+
+  it('pops to nothing and leaves the tree, on a timer the module owns (issue #35)', () => {
+    const pop = section('function popBalloon(', 'function spawnBalloon(')
+    expect(pop).toContain("classList.add('balloon--popped')")
+    // The removal is a timer in the set `stop()` clears, never a `transitionend` listener: that is what left
+    // the poppable stub in the tree, and it is why a party she has left cannot remove an element in the next
+    // one.
+    expect(pop).toContain('later(CELEBRATION.balloonCollapseMs,')
+    expect(pop).toContain('balloon.el.remove()')
+    expect(pop).not.toContain('transitionend')
+    // Reduced motion makes the collapse a single frame in the stylesheet, so pop and removal are the same
+    // step (SPEC §13): there is no travel for a timer to wait on.
+    expect(pop).toContain('if (reducedMotion)')
+    // The burst still fires at pop time, from the balloon's own box (issue #27; fireworks are not in scope).
+    expect(pop).toContain('spawnBurst(')
+    // The hit box goes with the balloon: `styles.test.ts` holds the stylesheet's `pointer-events: none`, and
+    // the module keeps its own guard so a second tap cannot pop the same balloon twice.
+    expect(source).toContain('if (!running || balloon.popped) return')
+    // `stop()` cancels the pending exits and takes a mid-collapse balloon with it.
+    const stop = section('function stop(): void {', 'return {')
+    expect(stop).toContain('clearTimers()')
+    expect(stop).toContain('balloon.el.remove()')
   })
 
   it('hangs the bunch through the placement rule, in px against the board rather than as a percent of the overlay (issues #25, #32-#34)', () => {

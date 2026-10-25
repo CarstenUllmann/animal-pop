@@ -318,6 +318,13 @@ export const CELEBRATION = {
   balloonSwayPx: 7,
   balloonBobPx: 8,
   /**
+   * Issue #35: how long a pop takes to collapse to nothing, and how long after the pop the module removes
+   * the element. `styles.test.ts` holds the stylesheet's transition to this number, so the timer that
+   * removes the balloon cannot fire before the collapse has finished - which is the difference between a
+   * balloon that leaves the layer and a stub that stays poppable.
+   */
+  balloonCollapseMs: 180,
+  /**
    * The stylesheet fallback for the play-arrow delay (issue #28). The shipped delay is derived per
    * party from the rise and the stagger and written inline; this constant only keeps the no-JS and
    * test path unchanged.

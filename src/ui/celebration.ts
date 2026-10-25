@@ -29,7 +29,8 @@ const BALLOON_COLORS = ['#ff8fab', '#ffd166', '#7bdff2', '#a0e57c', '#c9a7ff', '
  * does not arrive as one flat wall, each chimes on entry and pops on tap, and popping the last one
  * brings a whole new set. The number of balloons is the bubbles she has left, capped at twelve. The
  * play button appears once the last balloon has settled, and it becomes visible and tappable in the
- * same step (issue #28), while the balloons keep swaying behind it (issue #26).
+ * same step (issue #28), while the balloons keep swaying behind it (issue #26). A pop is a collapse that
+ * ends with the balloon taken out of the tree, and while it collapses it takes no taps (issue #35).
  *
  * This is the only particle system in the game. Density is capped by `PARTICLES` and the burst
  * objects come from `ui/pool.ts`, which never grows past its capacity, so a burst cannot make the
@@ -82,6 +83,8 @@ interface Particle {
 
 interface Balloon {
   el: HTMLElement
+  /** The pop has happened, so a second tap must not pop the same balloon twice (issue #35). The stylesheet
+   *  takes the hit box off a collapsing balloon; this is the module's own belt under that rule. */
   popped: boolean
   /** The place this balloon is hung at, in the board the rule was read against (issue #34). A rotation
    *  re-clamps this rather than drawing a new one, so the bunch she sees is the bunch the rule answered. */
@@ -161,9 +164,9 @@ export function createCelebration(
   let drawnAt = 0
   let frameCount = 0
   /**
-   * Every pending timer this layer owns: the staggered balloon chimes, the play-arrow reveal and the
-   * opening bursts. `stop()` clears them all, so a party that has been left cannot tick into the next
-   * one and an idle layer owns nothing (SPEC §10.1, issue #12).
+   * Every pending timer this layer owns: the staggered balloon chimes, the play-arrow reveal, the opening
+   * bursts and the exits that remove a collapsing balloon (issue #35). `stop()` clears them all, so a party
+   * that has been left cannot tick into the next one and an idle layer owns nothing (SPEC §10.1, §10.2).
    */
   const timers: number[] = []
   // The tier decision lives in `ui/frameTier.ts`; the meter is fed every animation frame and also owns
@@ -359,6 +362,45 @@ export function createCelebration(
     for (let i = 0; i < places.length; i++) spawnBalloon(places[i] as Place, i)
   }
 
+  /**
+   * Issue #35: a popped balloon leaves the layer. The shape owns the collapse, this module owns the timer that
+   * removes the element, and the hit box goes with the balloon - `.balloon--popped` takes no taps, so a tap
+   * during the collapse lands on the balloon underneath. The removal is scheduled on the timer set `stop()`
+   * clears, never by a `transitionend` listener (SPEC §10.1, §10.2), so a party she has left cannot remove an
+   * element in the next one, and a balloon that is mid-collapse when the party is force-closed goes with it.
+   */
+  function popBalloon(balloon: Balloon): void {
+    balloon.popped = true
+    balloon.el.classList.add('balloon--popped')
+    // A party restored after a force-close (SPEC §14.1) opens with no gesture behind it, so the audio
+    // context may not exist yet. This tap is the gesture that may create it, exactly as Android requires
+    // (SPEC §11); on a party she played into, unlock is a no-op.
+    audio.unlock()
+    audio.playBalloon(balloon.chimeIndex)
+
+    // The burst belongs to this pop and fires at pop time, from the balloon's own box (issue #27).
+    const own = balloon.el.getBoundingClientRect()
+    const board = root.getBoundingClientRect()
+    spawnBurst(own.left - board.left + own.width / 2, own.top - board.top + own.height / 2)
+
+    const exit = (): void => {
+      const at = balloons.indexOf(balloon)
+      if (at >= 0) balloons.splice(at, 1)
+      balloon.el.remove()
+      // SPEC §10.1: pop the last one and a whole new set arrives. Issue #36 makes that one place at a time;
+      // until then the set is re-hung once the last balloon of this one has left the tree.
+      if (balloons.length === 0) hangBunch()
+    }
+
+    // Reduced motion makes the collapse a single frame in the stylesheet, so there is no travel to wait for:
+    // pop and removal are the same step (SPEC §13).
+    if (reducedMotion) {
+      exit()
+      return
+    }
+    later(CELEBRATION.balloonCollapseMs, exit)
+  }
+
   function spawnBalloon(place: Place, index: number): void {
     const el = document.createElement('button')
     el.type = 'button'
@@ -410,26 +452,9 @@ export function createCelebration(
 
     el.addEventListener('click', () => {
       if (!running || balloon.popped) return
-      balloon.popped = true
-      el.classList.add('balloon--popped')
-      // A party restored after a force-close (SPEC §14.1) opens with no gesture behind it, so the audio
-      // context may not exist yet. This tap is the gesture that may create it, exactly as Android requires
-      // (SPEC §11); on a party she played into, unlock is a no-op.
-      audio.unlock()
-      audio.playBalloon(balloon.chimeIndex)
-
-      const own = el.getBoundingClientRect()
-      const board = root.getBoundingClientRect()
-      spawnBurst(own.left - board.left + own.width / 2, own.top - board.top + own.height / 2)
-
-      // SPEC §10.1: pop the last one and a whole new set arrives. The burst belongs to this pop,
-      // so the respawn must not fire a second one.
-      const allPopped = balloons.every((entry) => entry.popped)
-      if (!allPopped) return
-
-      for (const entry of balloons) entry.el.remove()
-      balloons.length = 0
-      hangBunch()
+      // The stylesheet takes the hit box off a collapsing balloon, so this guard is the module's own belt:
+      // a second tap on a balloon that is already on its way out must not pop it twice (issue #35).
+      popBalloon(balloon)
     })
   }
 
@@ -496,6 +521,8 @@ export function createCelebration(
     window.cancelAnimationFrame(raf)
     play.classList.remove('next--pulsing')
     play.classList.remove('next--ready')
+    // Issue #35: the exits are the timers `clearTimers()` above has just cancelled, so nothing can remove an
+    // element from a party she has left; a balloon that was mid-collapse is taken here instead.
     for (const balloon of balloons) balloon.el.remove()
     balloons.length = 0
     particles.reset()

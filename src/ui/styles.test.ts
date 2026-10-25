@@ -214,7 +214,18 @@ describe('celebration stylesheet', () => {
     expect(rule('.balloon__float')).toContain('animation: balloon-float')
     expect(rule('.balloon__shape')).toContain('transition: transform')
     expect(rule('.balloon--popped .balloon__shape')).toContain('transform: scale(')
-    expect(rule('.balloon--popped')).toBe('')
+    // Issue #35: the pop is a collapse to nothing, so the shape owns opacity as well as transform, and the
+    // collapse is the length the module schedules its removal timer from. Held to the constant, so the timer
+    // cannot fire before the collapse has finished - which is the difference between a balloon that leaves
+    // the layer and a stub that stays poppable.
+    expect(rule('.balloon__shape')).toContain(
+      `transition: transform ${CELEBRATION.balloonCollapseMs}ms ease-out, opacity ${CELEBRATION.balloonCollapseMs}ms ease-out`,
+    )
+    expect(rule('.balloon--popped .balloon__shape')).toContain('opacity: 0')
+    // Issue #35: `.balloon--popped` has a rule of its own now, and it has to. The assertion that it had none
+    // is what locked the ghost in - she tapped the same balloon over and over because the poppable stub kept
+    // its hit box. The hit box is the button, so the button has to stop taking taps while the shape collapses.
+    expect(rule('.balloon--popped')).toContain('pointer-events: none')
     // The float keyframes carry both axes at ±7 and ±8 CSS px.
     expect(ceilingsForKeyframe('balloon-float')).toEqual({ x: CELEBRATION.balloonSwayPx, y: CELEBRATION.balloonBobPx })
   })

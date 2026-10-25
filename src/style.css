@@ -378,16 +378,28 @@ body {
 }
 
 /* The pop is a transition, not a second animation, because the inline delay the module sets for the
-   stagger would otherwise delay the pop as well. A tapped balloon pops at once. */
+   stagger would otherwise delay the pop as well. A tapped balloon pops at once.
+   Issue #35: the pop is a collapse to nothing, not a shrink that leaves a stub. The shape owns transform
+   and opacity, `CELEBRATION.balloonCollapseMs` is how long the collapse takes, and the module removes the
+   element when it ends - on a timer it owns, never a `transitionend` listener. */
 .balloon__shape {
   display: block;
   width: 100%;
   height: 100%;
-  transition: transform 260ms ease-out;
+  transition: transform 180ms ease-out, opacity 180ms ease-out;
+}
+
+/* Issue #35: the hit box goes with the balloon. `styles.test.ts` used to assert that `.balloon--popped` had
+   no rule of its own, and that assertion is what locked the poppable stub in - she tapped the same balloon
+   over and over because the stub still took the tap. While a balloon is collapsing it takes none, so the
+   tap lands on the balloon underneath it. */
+.balloon--popped {
+  pointer-events: none;
 }
 
 .balloon--popped .balloon__shape {
-  transform: scale(0.55);
+  transform: scale(0);
+  opacity: 0;
 }
 
 .balloon__svg {
