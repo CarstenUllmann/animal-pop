@@ -77,7 +77,10 @@ self.addEventListener('fetch', (event) => {
 })
 
 /** Cache first: after install the game needs nothing from the network, and on this tablet the network
- *  is not something to rely on. `ignoreSearch` is what keeps a `?debug=1` visit on the cached page. */
+ *  is not something to rely on. `ignoreSearch` is what keeps a `?debug=1` visit on the cached page.
+ *  That also means any same-origin GET with any query string resolves to the same cache entry: the
+ *  decision recorded in issue #41 is to accept the breadth, because `debug` is the only query the app
+ *  reads and there is no user-generated content, so a query string cannot address a different asset. */
 async function answer(event: FetchEvent): Promise<Response> {
   const hit = await caches.match(event.request, { ignoreSearch: true })
   if (hit) return hit

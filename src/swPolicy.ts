@@ -29,6 +29,11 @@ export function entryUrl(entry: PrecacheEntry): string {
  * network.
  *
  * `origin` is the worker's own origin, which is also what a relative URL resolves against.
+ *
+ * Only the method and the origin are decided here. Whether a request matches a cache entry is
+ * deliberately query-agnostic (`ignoreSearch` in src/sw.ts), so a `?debug=1` visit keeps the cached
+ * page. Issue #41 records the decision to accept that breadth: `debug` is the only query the app
+ * reads, and with no user-generated content a query string cannot address a different asset.
  */
 export function answersFromCache(request: { url: string; method: string }, origin: string): boolean {
   return request.method === 'GET' && new URL(request.url, origin).origin === origin
