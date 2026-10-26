@@ -24,8 +24,12 @@ npm test           # unit tests (vitest)
 npm run typecheck  # tsc --noEmit
 npm run build      # typecheck + production build into dist/
 npm run preview    # serve the production build locally
+npm run check:csp  # load the build in a headless browser, fail on CSP violations
 npm run sim        # headless player, levels 1-30 x 1000 runs, and the acceptance checks
 ```
+
+`check:csp` needs a Chromium-based browser (Chrome, Edge or Chromium); set `CHROME_PATH` if it is
+not in a usual install location. It builds first, so it checks the bundle that would be deployed.
 
 ## Deploy
 
@@ -157,7 +161,7 @@ src/
     debug.ts           # ?debug=1 overlay
   assets/animals/      # bundled SVGs
 public/icons/          # generated PWA icons + source SVG
-scripts/               # icon generator, and the simulator reporter
+scripts/               # icon generator, the simulator reporter, the CSP check
 ```
 
 ## Credits

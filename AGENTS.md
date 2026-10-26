@@ -7,7 +7,10 @@ game behaviour, layout, or audio.
 ## Commands
 
 `npm install`, then `npm run dev`, `npm test`, `npm run typecheck`, `npm run build`,
-`npm run preview`. Pushing to `main` deploys to GitHub Pages.
+`npm run preview`, `npm run check:csp`. Pushing to `main` deploys to GitHub Pages.
+
+`npm run check:csp` builds, serves `dist/`, and loads it in a headless Chromium to assert the CSP
+admits every URL the bundle uses (needs Chrome, Edge or Chromium; set `CHROME_PATH` if needed).
 
 ## Agent skills
 
