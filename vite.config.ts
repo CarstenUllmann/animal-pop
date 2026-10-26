@@ -16,10 +16,14 @@ const BUILD_TARGETS = ['es2017', CHROME_TARGET]
  * delivers styles through inline `<style>` tags, which a strict `style-src 'self'` blocks; the
  * shipped build has no inline script and no inline style (`registerSW.js` is a file), so the
  * strict policy holds there. `frame-ancestors` is ignored in a meta policy, so it is not listed.
+ *
+ * `img-src` has to allow `data:` because Vite inlines assets under `assetsInlineLimit` (4 KiB) as
+ * data URIs, and the Twemoji animal faces are small enough to be inlined. An SVG loaded through
+ * `<img src="data:...">` cannot run script, so this does not widen the script surface.
  */
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "img-src 'self'",
+  "img-src 'self' data:",
   "script-src 'self'",
   "style-src 'self'",
   "connect-src 'self'",
