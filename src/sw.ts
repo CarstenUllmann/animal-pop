@@ -8,9 +8,10 @@
  * clients.claim (45).
  *
  * The decisions are in src/swPolicy.ts, where they can be tested; this file is the wiring, and
- * src/baseline.test.ts scans it like the rest of src/.
+ * src/baseline.test.ts scans it like the rest of src/. `scripts/offline.ts` builds it as a plain script
+ * with the list of files to precache baked in.
  */
-import { CACHE_NAME, SHELL, answersFromCache, canServeShell, entryUrl, type PrecacheEntry } from './swPolicy'
+import { CACHE_NAME, SHELL, answersFromCache, canServeShell } from './swPolicy'
 
 /**
  * Only the parts of the worker API this file uses. tsconfig compiles against the DOM lib, which has no
@@ -26,8 +27,6 @@ interface FetchEvent extends ExtendableEvent {
 }
 
 interface WorkerScope {
-  /** Replaced at build time by vite-plugin-pwa with the list of files the build produced. */
-  __WB_MANIFEST: PrecacheEntry[]
   location: string
   clients: { claim(): Promise<void> }
   skipWaiting(): Promise<void>
@@ -37,6 +36,9 @@ interface WorkerScope {
 }
 
 declare const self: WorkerScope
+
+/** Replaced at build time (scripts/offline.ts) with the files this build produced. */
+declare const __PRECACHE_FILES__: string[]
 
 const ORIGIN = new URL(self.location).origin
 
@@ -52,7 +54,7 @@ self.addEventListener('install', (event) => {
  */
 async function precache(): Promise<void> {
   const cache = await caches.open(CACHE_NAME)
-  await Promise.all(self.__WB_MANIFEST.map((entry) => cache.add(entryUrl(entry)).catch(() => null)))
+  await Promise.all(__PRECACHE_FILES__.map((url) => cache.add(url).catch(() => null)))
 }
 
 self.addEventListener('activate', (event) => {

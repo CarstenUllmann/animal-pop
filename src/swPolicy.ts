@@ -7,20 +7,14 @@
  */
 
 /**
- * What vite-plugin-pwa injects at the injection point: the files this build produced. Entries are
- * objects, but plain strings are accepted too.
+ * One cache name for the app. Activation deletes every other cache this origin holds, so a rename is
+ * what would prune a previous build's files; the name is fixed, so a new build adds its hashed files
+ * next to the old ones and the old ones stay until the name changes.
  */
-export type PrecacheEntry = string | { url: string }
-
-/** One cache, so a new build's activate step can drop the previous one. */
 export const CACHE_NAME = 'pop-pals.v1'
 
 /** What we serve when she launches the installed app with no network. */
 export const SHELL = 'index.html'
-
-export function entryUrl(entry: PrecacheEntry): string {
-  return typeof entry === 'string' ? entry : entry.url
-}
 
 /**
  * Which requests the worker answers from cache: same-origin GETs only. The game makes no runtime

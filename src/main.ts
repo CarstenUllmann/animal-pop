@@ -65,6 +65,23 @@ if (app === null) {
   }
 }
 
+/**
+ * Offline install — issue #23. The worker is hand-written (`src/sw.ts`) and `scripts/offline.ts` builds
+ * it with this build's file list, so after it installs the game needs nothing from the network.
+ *
+ * Registered on `load`, so the install does not compete with the first frame for the tablet's
+ * connection, and in a build only, because the dev server has no worker to serve. A failure is
+ * recorded rather than thrown: there is no console on the tablet, and the trace is what gets read on
+ * the next launch.
+ */
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch((error: unknown) => {
+      log.error(`service worker: ${describeError(error)}`)
+    })
+  })
+}
+
 function start(root: HTMLElement): void {
   log.step('#app')
   root.classList.add('game')

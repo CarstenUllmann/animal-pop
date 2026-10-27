@@ -1,17 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { CACHE_NAME, SHELL, answersFromCache, canServeShell, entryUrl } from './swPolicy'
+import { CACHE_NAME, SHELL, answersFromCache, canServeShell } from './swPolicy'
 
 const ORIGIN = 'https://carstenullmann.github.io'
-
-describe('precache entries', () => {
-  it('reads the object form vite-plugin-pwa injects', () => {
-    expect(entryUrl({ url: 'index.html' })).toBe('index.html')
-  })
-
-  it('reads a plain string too', () => {
-    expect(entryUrl('icons/icon-192.png')).toBe('icons/icon-192.png')
-  })
-})
 
 describe('answersFromCache', () => {
   it('answers same-origin GETs', () => {

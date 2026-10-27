@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from 'vite'
-import { VitePWA } from 'vite-plugin-pwa'
+import { offlineShell } from './scripts/offline.ts'
 
 // Engine baseline: Chrome 61, the version measured on the tablet's System WebView (issue #23).
 // The installed app runs in that WebView, not in the tablet's browser (Chrome 138), so the shipped
@@ -14,8 +14,8 @@ const BUILD_TARGETS = ['es2017', CHROME_TARGET]
  *
  * It is injected at build time rather than written into index.html because Vite's dev server
  * delivers styles through inline `<style>` tags, which a strict `style-src 'self'` blocks; the
- * shipped build has no inline script and no inline style (`registerSW.js` is a file), so the
- * strict policy holds there. `frame-ancestors` is ignored in a meta policy, so it is not listed.
+ * shipped build has no inline script and no inline style, so the strict policy holds there.
+ * `frame-ancestors` is ignored in a meta policy, so it is not listed.
  *
  * `img-src` has to allow `data:` because Vite inlines assets under `assetsInlineLimit` (4 KiB) as
  * data URIs, and the Twemoji animal faces are small enough to be inlined. An SVG loaded through
@@ -63,53 +63,8 @@ export default defineConfig({
   },
   plugins: [
     injectContentSecurityPolicy(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
-      manifest: {
-        id: './',
-        name: 'Pop Pals',
-        short_name: 'Pop Pals',
-        description: 'Tap a group of animals to make them pop.',
-        lang: 'en',
-        start_url: './',
-        scope: './',
-        display: 'standalone',
-        orientation: 'landscape',
-        background_color: '#101426',
-        theme_color: '#101426',
-        icons: [
-          {
-            src: 'icons/icon-192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: 'icons/icon-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-          },
-          {
-            src: 'icons/icon-maskable-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-        ],
-      },
-      // Workbox's own runtime cannot install on the tablet's engine (SPEC §2), so the worker is
-      // hand-written in src/sw.ts and this plugin only supplies the list of files to precache.
-      strategies: 'injectManifest',
-      // srcDir and filename are what pick the worker source: the plugin builds them as its entry.
-      srcDir: 'src',
-      filename: 'sw.ts',
-      injectManifest: {
-        // The whole app plus the manifest and its icons: after install there are zero runtime requests.
-        globPatterns: ['**/*.{js,css,html,svg,png}'],
-        // The plugin defaults to a module worker, which the tablet's engine cannot register. As a plain
-        // script it registers fine there.
-        rollupFormat: 'iife',
-      },
-    }),
+    // The worker is hand-written (src/sw.ts); this only feeds it the list of files to precache and
+    // builds it as a plain script. `public/manifest.webmanifest` is the app manifest.
+    offlineShell({ target: BUILD_TARGETS }),
   ],
 })

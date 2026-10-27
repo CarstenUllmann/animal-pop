@@ -209,8 +209,13 @@ describe('engine baseline', () => {
 
   it('builds the worker as a plain script, which that engine can register', () => {
     const config = readFileSync(join(SRC, '..', 'vite.config.ts'), 'utf8')
-    expect(config).toContain("strategies: 'injectManifest'")
-    expect(config).toContain("filename: 'sw.ts'")
-    expect(config).toContain("rollupFormat: 'iife'")
+    const plugin = readFileSync(join(SRC, '..', 'scripts', 'offline.ts'), 'utf8')
+    // Wired into the build, and downlevelled to the same floor as the app.
+    expect(config).toContain('offlineShell({ target: BUILD_TARGETS })')
+    // The worker source, built as an IIFE: a module worker cannot be registered on that engine.
+    expect(plugin).toContain("join(root, 'src/sw.ts')")
+    expect(plugin).toContain("format: 'iife'")
+    // At the root of the build, which is the scope `src/main.ts` registers it under.
+    expect(plugin).toContain("const WORKER = 'sw.js'")
   })
 })
