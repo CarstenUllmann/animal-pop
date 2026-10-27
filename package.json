@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "A tap-a-cluster animal-popping game, shipped as an offline-first PWA.",
+  "engines": {
+    "node": ">=26.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "npm run typecheck && vite build",
