@@ -694,17 +694,38 @@ Manual checklist on the actual tablet, run at every milestone:
       (ADR-0002), because Chrome's WebAPK shell cannot load on Android 8.1
 - [x] works in airplane mode
 - [x] rotates to portrait without breaking layout
-- [ ] no zoom, no scroll, no text selection, no context menu
-- [ ] 60fps pops, falls and fireworks (or a stable 30)
+- [x] no zoom, no scroll, no text selection, no context menu
+- [x] 60fps pops, falls and fireworks (or a stable 30)
 - [x] every tap gives feedback within one frame
 - [x] force-close mid-level → resumes exactly where it was
 
-Run on the target tablet on 2026-10-25 at `6c1f8e4`, through the Firefox PWA wrapper (ADR-0002):
-the app installs, opens full-screen with no address bar in its own task, cold-launches from cache in
-airplane mode, resumes the exact level it was left on, and gives tap feedback inside one frame. The
-frame-rate row is open as issue #29 — the celebration ran at 27.8–31.3 fps while the tier meter kept
-reporting 60 fps, so the meter never degrades under mixed frame delivery. The kid-proofing row is
-still to be walked through by hand.
+Run on the target tablet on 2026-10-27 at `9c3714e` (live asset `assets/index-CQJ2DJOe.js`, which a local
+build of `main` reproduces), through the Firefox PWA wrapper (ADR-0002) and in Chrome 137 on the same
+device for the readings the installed app cannot expose:
+
+- **install, standalone, offline.** The launcher's Pop Pals icon opens `ExternalAppBrowserActivity` with
+  no address bar and no browser chrome. With `airplane_mode_on=1` and Wi-Fi/data off (`ping` unreachable),
+  a force-stopped app cold-launches from the icon and resumes level 10 exactly.
+- **rotation.** Landscape 1280×724 → 900×1104 portrait keeps level, rack, goals and every tile; cell 108px
+  → 101px, board square and fully visible, no scroll. The installed app in portrait paints a ~654px board
+  (≈109px cells). Portrait also fits a 35-bubble rack (26 columns, two rows) inside the panel row, 245px of
+  its 464px, with 64px level and mute boxes.
+- **kid-proofing.** A 40→200px pinch leaves `visualViewport.scale` at 1; swipes leave `scrollY` at 0 with
+  `scrollHeight == innerHeight`; a 900ms long-press fires no context menu and no selectable text; a double
+  tap does not zoom. In the installed app the same swipes and a 1.2s long-press on the level label scroll
+  nothing, select nothing, and only arm the adult-reset ✓.
+- **frame rate.** The celebration holds 59.1fps at the 60fps tier in Chrome (pops, falls, and a party
+  idling 75s with ambient bursts). In Firefox the same party delivers 24.4–29.6fps and the tier reads
+  `30fps` (issue #29). Deliberately late frames (6x/8x CPU throttle) take both the tier row and
+  `data-tier` to 30fps and back to 60fps 3.4s after the load is removed.
+- **tap feedback.** The popped tiles' `.burst` elements are in the DOM by the end of the tap's own event
+  dispatch, so the pop is painted on the next animation frame (14ms), not a later one.
+- **resume.** After `am force-stop` mid-level, Chrome reopens the same level, seed, rack, goals and a
+  byte-identical 36-tile board; the installed app reopens the same level-10 board.
+
+The 2026-10-25 run at `6c1f8e4` is what found #29: the celebration ran at 27.8–31.3fps while the tier kept
+reporting 60fps, so the meter never degraded under mixed delivery. `90a1dd1` fixed the meter and the run
+above is its device re-check.
 
 ---
 
