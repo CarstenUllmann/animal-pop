@@ -565,7 +565,8 @@ from the browser: launch the app, let it die, then open `?debug=1` in the browse
 - **Vite + TypeScript (strict), no UI framework.**
 - DOM + CSS for the board (36 real elements, CSS transforms for motion), one `<canvas>`
   overlay for fireworks/particles.
-- **`vite-plugin-pwa`** for the service worker + manifest.
+- **A local Vite plugin** (`scripts/offline.ts`) for the service worker + manifest: it builds
+  `src/sw.ts` as a plain script with the build's file list baked in (ADR-0003).
 - **Vitest** for unit tests. Node script for the tuning simulator.
 - Later Android: wrap with **Capacitor** (no code changes expected).
 

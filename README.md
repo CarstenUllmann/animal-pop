@@ -41,7 +41,8 @@ The build targets `es2017` / `chrome61`. That target is a defensive floor, not t
 runs: the tablet's WebView provider is Chrome 137, and the installed app runs in Firefox's PWA wrapper,
 so the effective engine is Gecko (SPEC §2, [ADR-0002](docs/adr/0002-firefox-pwa-wrapper-is-the-tablet-install-path.md)).
 No CDN, no web fonts, no runtime network requests: everything is bundled and the service worker
-precaches the whole app.
+precaches the whole app. The worker is hand-written (`src/sw.ts`), and `scripts/offline.ts` builds it as
+a plain script with this build's file list baked in (ADR-0003).
 
 The Chrome 61 parse surface is still what the sources are held to, because the WebAPK shell Chrome mints
 for this origin cannot load on Android 8.1 — its `classes.dex` is DEX 039 while the platform loads at most
@@ -161,7 +162,9 @@ src/
     debug.ts           # ?debug=1 overlay
   assets/animals/      # bundled SVGs
 public/icons/          # generated PWA icons + source SVG
-scripts/               # icon generator, the simulator reporter, the CSP check
+public/manifest.webmanifest  # the app manifest (static; nothing generates it)
+scripts/               # icon generator, the simulator reporter, the CSP check,
+                       # the offline-shell build plugin
 ```
 
 ## Credits
