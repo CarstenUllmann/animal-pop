@@ -117,9 +117,9 @@ function start(root: HTMLElement): void {
 
   const view = createBoardView({
     onTap: enqueueTap,
-    // SPEC §8.3: the view needs to know which animals are goals so it can mark them; the core has
-    // already decided, so this only reports.
-    goalAnimals: () => state.goals.map((goal) => goal.animal),
+    // SPEC §8.1: the view needs the goals so it can mark a goal animal that is in a legal group; the
+    // core has already decided, so this only reports (issue #48).
+    goals: () => state.goals,
   })
   boardArea.append(view.element)
   log.step('view')

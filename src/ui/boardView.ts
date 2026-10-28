@@ -1,7 +1,8 @@
 import { ANIMALS_BY_ID } from '../game/animals'
 import { colOf, rowOf } from '../game/board'
 import { GRID, MOTION } from '../game/constants'
-import type { AnimalId, Board, PopResult } from '../game/types'
+import { goalHighlightCells } from '../game/highlight'
+import type { AnimalId, Board, Goal, PopResult } from '../game/types'
 import { canAnimate, canAwaitFinished, canListAnimations, hasMatchMedia } from './capabilities'
 
 export interface BoardView {
@@ -20,10 +21,10 @@ export interface BoardView {
 export interface BoardViewOptions {
   onTap(index: number): void
   /**
-   * The goal animals, so a tile can carry the glow SPEC §8.3 asks for. It is read per tile rather
-   * than once at mount, because tiles are created as the board refills.
+   * The level's goals, so a tile can carry the glow SPEC §8.1 asks for. It is read once per settled
+   * board rather than once per tile, because the glow is a property of the board (issue #48).
    */
-  goalAnimals: () => readonly string[]
+  goals: () => readonly Goal[]
 }
 
 const REDUCED_MOTION =
@@ -70,13 +71,13 @@ export function createBoardView(options: BoardViewOptions): BoardView {
 
   board.addEventListener('pointerdown', handlePointerDown)
 
-  function createTile(animal: AnimalId, index: number): HTMLButtonElement {
+  function createTile(animal: AnimalId, index: number, highlighted: ReadonlySet<number>): HTMLButtonElement {
     const definition = ANIMALS_BY_ID.get(animal)
     const tile = document.createElement('button')
     tile.type = 'button'
     tile.className = 'tile'
-    // SPEC §8.3: the animals she is collecting read as different, so she can see what matters.
-    if (options.goalAnimals().indexOf(animal) >= 0) tile.classList.add('tile--goal')
+    // SPEC §8.1: only a goal animal in a legal group is marked, so the glow never promises a wobble.
+    if (highlighted.has(index)) tile.classList.add('tile--goal')
     tile.tabIndex = -1
     tile.dataset.index = String(index)
     tile.dataset.animal = animal
@@ -125,13 +126,15 @@ export function createBoardView(options: BoardViewOptions): BoardView {
   }
 
   async function deal(next: Board): Promise<void> {
+    // Once per board, not once per tile: the rule needs the whole settled board (issue #48).
+    const highlighted = goalHighlightCells(next, options.goals())
     const animations: Array<Promise<unknown>> = []
     for (let index = 0; index < next.length; index++) {
       const animal = next[index]
       if (animal === null || animal === undefined) continue
       const row = rowOf(index)
       const col = colOf(index)
-      const tile = createTile(animal, index)
+      const tile = createTile(animal, index, highlighted)
       board.append(tile)
 
       const startRow = row - GRID
@@ -150,11 +153,14 @@ export function createBoardView(options: BoardViewOptions): BoardView {
       newPerColumn.set(col, seen === undefined ? 1 : seen + 1)
     }
 
+    // The settled board is the one on screen after this animation, so it is the one the glow is
+    // decided from — once for the whole board, like `deal` (issue #48).
+    const highlighted = goalHighlightCells(result.board, options.goals())
     const animations: Array<Promise<unknown>> = []
     for (const move of result.moves) {
       const row = rowOf(move.to)
       const col = colOf(move.to)
-      const tile = createTile(move.animal, move.to)
+      const tile = createTile(move.animal, move.to, highlighted)
       board.append(tile)
 
       let startRow: number

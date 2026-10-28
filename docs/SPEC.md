@@ -170,7 +170,9 @@ than the animation.
 - Two goal animals per level, always distinct, always among the types in play.
 - A goal card shows: the animal face, a numeral (`remaining`), and a ring around the face
   that fills as she collects. The numeral is a bonus; the ring must carry the meaning alone.
-- Goal animals on the board get a subtle outline/glow so she can see what matters.
+- Goal animals **that sit in a legal group (≥2)** get a subtle ring on the board. A completed goal's
+  animals lose it, and an isolated goal animal looks like any other animal: the gold must never mark a
+  tap that would wobble (§7.2).
 - Level completes when **both** goals reach 0.
 
 ### 8.2 Party meter (the bubble rack)

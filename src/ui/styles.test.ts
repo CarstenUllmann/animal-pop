@@ -262,6 +262,17 @@ describe('celebration stylesheet', () => {
   })
 })
 
+describe('the goal glow (SPEC §8.1, issue #48)', () => {
+  it('is a ring with no gold fill, so a lit cell cannot read as a button', () => {
+    const goal = rule('.tile--goal::before')
+    expect(goal).toContain('box-shadow: inset 0 0 0 1.5px rgba(255, 209, 102, 0.55)')
+    expect(goal).not.toContain('background')
+    expect(goal).not.toContain('radial-gradient')
+    // The tile keeps the dark background every other tile has; only the ring is added.
+    expect(rule('.tile::before')).toContain('background: radial-gradient')
+  })
+})
+
 describe('shell (SPEC §13, issue #10)', () => {
   it('puts the party as an overlay over the board rather than a band below it (issue #12)', () => {
     // The board area is the rect ui/celebration.ts measures, so the layer has to cover exactly it.

@@ -180,14 +180,10 @@ body {
   -webkit-user-drag: none;
 }
 
-/* SPEC §8.3: subtle glow around the goal animal. */
+/* SPEC §8.1: a ring around a goal animal that sits in a legal group. No gold fill: the fill made
+   a cell read as a button, and the count of rings is the "how many" signal (issue #48). */
 .tile--goal::before {
-  background: radial-gradient(
-    circle at 50% 32%,
-    rgba(255, 209, 102, 0.28),
-    rgba(255, 143, 163, 0.08) 72%
-  );
-  box-shadow: inset 0 0 0 2px rgba(255, 209, 102, 0.45);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 209, 102, 0.55);
 }
 
 .tile:active::before {
