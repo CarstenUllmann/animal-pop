@@ -1,4 +1,5 @@
 import {
+  BALLOON_COLORS,
   CELEBRATION,
   FIREWORK_COLORS,
   LAYOUT,
@@ -16,13 +17,6 @@ import { createPool } from './pool'
 export type { FrameTier } from './frameTier'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
-
-/**
- * The balloon colours. The shape is filled with `currentColor` in the stylesheet, and nothing set a colour,
- * so every balloon rendered white. A party of white ovals does not read as balloons; the palette only ever
- * changes the decoration, never the tap target or its sound.
- */
-const BALLOON_COLORS = ['#ff8fab', '#ffd166', '#7bdff2', '#a0e57c', '#c9a7ff', '#ff9f68']
 
 /**
  * The celebration layer (SPEC §10, issues #12 and #13). Balloons rise one at a time so the scene does not

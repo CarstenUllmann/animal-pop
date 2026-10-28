@@ -233,6 +233,25 @@ export const FONTS = {
 export const FIREWORK_COLORS = ['#ff5c8a', '#ffd166', '#4ce3c0', '#7bdff2', '#b388ff', '#ff8f4d', '#fff3b0'] as const
 
 /**
+ * The balloon palette (SPEC §10.1, issue #49). Nine bright, friendly colours: the original six plus
+ * red, teal and blue. The values are provisional until the bunch has been looked at on the tablet.
+ *
+ * Kept separate from `FIREWORK_COLORS` on purpose: the two palettes are tuned for different jobs and
+ * different backgrounds, so changing one must not silently change the other.
+ */
+export const BALLOON_COLORS = [
+  '#ff8fab',
+  '#ffd166',
+  '#7bdff2',
+  '#a0e57c',
+  '#c9a7ff',
+  '#ff9f68',
+  '#ff6b6b',
+  '#4ce3c0',
+  '#6ea8fe',
+] as const
+
+/**
  * Fireworks (SPEC §10.2). The burst cap is a hard one: the pool in `ui/pool.ts` hands out at
  * most `capacity` particles and never grows, so a burst that would exceed it drops particles
  * rather than allocating them. `degradeAfterMs` is how long frame times must run over budget
