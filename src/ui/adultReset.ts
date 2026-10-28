@@ -89,11 +89,21 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
     show(false)
   }
 
-  const press = (event: PointerEvent): void => {
-    // While the confirm step is open, only its icon continues it. Pressing anywhere else on the numeral
-    // is "any other interaction", so it cancels instead of starting a second hold.
+  /** The second tap confirms (issue #16): it wipes progress and starts a fresh level 1. */
+  const confirm = (): void => {
+    if (!confirmIsLive(state, deps.clock.now())) return
+    cancel()
+    // The run owns the save, so the reset is one command rather than a save this view rebuilds.
+    deps.onReset()
+  }
+
+  const press = (): void => {
+    // The confirm step is open, so this pointerdown is the second tap: it confirms (issue #16). The
+    // numeral is the thing the adult held, and the tick is only the visible half of that target, so a
+    // tap on either one counts. A pointerdown outside the numeral is "any other interaction" and is
+    // cancelled by the document listener below.
     if (state.stage === 'confirm') {
-      if (event.target !== icon) cancel()
+      confirm()
       return
     }
 
@@ -124,18 +134,17 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
     if (state.stage === 'idle') clearHold()
   }
 
-  const onNumeralClick = (event: Event): void => {
-    // The confirm icon is the only interaction that completes the reset; anything else on the
-    // numeral cancels it (issue #16).
-    if (event.target === icon) return
-    if (state.stage === 'confirm') cancel()
+  const onIconClick = (): void => {
+    // Clicks that do reach the icon (assistive tech, a synthetic click) are the same confirmation. A
+    // pointer tap already confirmed on pointerdown, so this is then a no-op.
+    confirm()
   }
 
-  const onIconClick = (): void => {
-    if (!confirmIsLive(state, deps.clock.now())) return
-    cancel()
-    // The run owns the save, so the reset is one command rather than a save this view rebuilds.
-    deps.onReset()
+  const onIconKey = (event: KeyboardEvent): void => {
+    // A span with `role="button"` gets no keyboard behaviour for free, and the icon is focusable.
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    confirm()
   }
 
   /**
@@ -153,8 +162,8 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
   numeral.addEventListener('pointerup', release)
   numeral.addEventListener('pointerleave', release)
   numeral.addEventListener('pointercancel', cancel)
-  numeral.addEventListener('click', onNumeralClick)
   icon.addEventListener('click', onIconClick)
+  icon.addEventListener('keydown', onIconKey)
   document.addEventListener('pointerdown', onDocumentPointerDown, true)
 
   return {
@@ -164,8 +173,8 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
       numeral.removeEventListener('pointerup', release)
       numeral.removeEventListener('pointerleave', release)
       numeral.removeEventListener('pointercancel', cancel)
-      numeral.removeEventListener('click', onNumeralClick)
       icon.removeEventListener('click', onIconClick)
+      icon.removeEventListener('keydown', onIconKey)
       document.removeEventListener('pointerdown', onDocumentPointerDown, true)
       clearHold()
       clearConfirm()
