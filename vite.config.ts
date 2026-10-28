@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite'
 import { offlineShell } from './scripts/offline.ts'
+import { cssTokens } from './scripts/tokens.ts'
 
 // Engine baseline: Chrome 61, the version measured on the tablet's System WebView (issue #23).
 // The installed app runs in that WebView, not in the tablet's browser (Chrome 138), so the shipped
@@ -63,6 +64,9 @@ export default defineConfig({
   },
   plugins: [
     injectContentSecurityPolicy(),
+    // The numbers `style.css` paints that a module also works from are generated into the sheet rather
+    // than copied beside it (ADR 0004). A same-origin stylesheet is what `style-src 'self'` admits.
+    cssTokens(),
     // The worker is hand-written (src/sw.ts); this only feeds it the list of files to precache and
     // builds it as a plain script. `public/manifest.webmanifest` is the app manifest.
     offlineShell({ target: BUILD_TARGETS }),

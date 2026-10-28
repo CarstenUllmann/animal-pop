@@ -157,28 +157,7 @@ export const LAYOUT = {
    * the clause was written from, and no level reaches it.
    */
   rackSizingBubbles: 35,
-  /**
-   * The chrome the stylesheet reserves inside the panel and the board area. Each value is `style.css`'s own
-   * declaration read at 1rem = 16 CSS px, rounded up: the layout model may not charge less than the rule
-   * actually reserves, so `styles.test.ts` compares every value below against the stylesheet and fails if
-   * either side drifts. That is what turns "the rack fits the panel" from an estimate into a checked number.
-   */
-  chrome: {
-    /** `.panel` padding: 0.8rem vertical, 1rem across. */
-    panelPaddingPx: 13,
-    panelPaddingXPx: 16,
-    /** `.board-area` padding: the margin SPEC §13 asks the board to be centred inside. */
-    boardAreaPaddingPx: 16,
-    /** `.goal` padding, and the ring the card row has to hold, which is taller than its numeral. */
-    goalPaddingPx: 7,
-    goalRingPx: 44,
-    /** `.rack` padding: 0.5rem vertical, 0.8rem across, plus the 0.6rem it stands away from the panel edge. */
-    rackPaddingPx: 8,
-    rackPaddingXPx: 13,
-    rackMarginPx: 10,
-    /** `.rack__bubble` margin-bottom: the row spacing, which the stylesheet charges on every row. */
-    rackRowPx: 6,
-  },
+
   /** Nothing interactive is smaller than this (SPEC §13): the mute target and the numeral's box. */
   interactiveMinPx: 64,
   /**
@@ -191,7 +170,7 @@ export const LAYOUT = {
   balloonWidthFactor: 0.195,
   balloonHeightFactor: 0.225,
   balloonPxMin: 120,
-  /** Height over width, which is what `style.css` paints `.balloon` at; `styles.test.ts` compares them. */
+  /** Height over width, which is what `style.css` paints `.balloon` at (ADR 0004 emits it as a token). */
   balloonHeightRatio: 1.18,
   /** Each balloon's own size is jittered by this fraction, so the bunch never looks tiled. */
   balloonSizeJitter: 0.06,
@@ -208,16 +187,42 @@ export const LAYOUT = {
   /** The rungs between the target spacing and the floor are the percents in steps of this (issue #33), so the ladder is derived from the two constants above rather than typed as a list. */
   balloonSpacingStepPct: 5,
   /**
-   * `.celebration`'s `padding-bottom` percent — the band the play arrow sits in. Mirrored against the
-   * stylesheet by `styles.test.ts`, the same way the other chrome values are.
+   * `.celebration`'s `padding-bottom` percent — the band the play arrow sits in. The build emits it as
+   * `--arrow-band`, and `ui/layout.ts` reads the same constant, so the rule and the placement fit agree.
    */
   celebrationBottomPaddingPct: 4,
-  /** The fallback the stylesheet carries for a single balloon the module has not placed. `styles.test.ts`
-   *  reads it through the placement rule rather than as a band: on the target tablet 50% up the overlay is a
-   *  place the rule takes, which is the difference between a percent of the overlay and a place in the board. */
+  /** The fallback the stylesheet carries for a single balloon the module has not placed, emitted as
+   *  `--balloon-band`: on the target tablet 50% up the overlay is a place the rule takes, which is the
+   *  difference between a percent of the overlay and a place in the board. */
   balloonBandBottomMin: 50,
   /** Device pixel ratio cap (SPEC §5). */
   dprMax: 2,
+} as const
+
+/**
+ * The chrome the stylesheet reserves inside the panel and the board area (SPEC §13, issue #10).
+ *
+ * These used to be a mirror: `style.css` held the declarations and `styles.test.ts` parsed them to check
+ * this object had not drifted. Now the direction is one way. These numbers are the source, the build emits
+ * them as `--chrome-*` custom properties into the stylesheet (ADR 0004), and `style.css` reads them, so
+ * there is no second copy to drift. `ui/layout.ts` charges the same numbers against the panel and board
+ * areas, which is what turns "the rack fits the panel" from an estimate into a checked number.
+ */
+export const CHROME = {
+  /** `.panel` padding: vertical, then across. */
+  panelPaddingPx: 13,
+  panelPaddingXPx: 16,
+  /** `.board-area` padding: the margin SPEC §13 asks the board to be centred inside. */
+  boardAreaPaddingPx: 16,
+  /** `.goal` padding, and the ring the card row has to hold, which is taller than its numeral. */
+  goalPaddingPx: 7,
+  goalRingPx: 44,
+  /** `.rack` padding: vertical, across, plus the gap it stands away from the panel edge. */
+  rackPaddingPx: 8,
+  rackPaddingXPx: 13,
+  rackMarginPx: 10,
+  /** `.rack__bubble` margin-bottom: the row spacing, which the stylesheet charges on every row. */
+  rackRowPx: 6,
 } as const
 
 /** Numeral sizes (SPEC §13): level 40-56 CSS px, goal count 28-40 CSS px. */
@@ -364,12 +369,14 @@ export function playButtonDelayMsFor(partySize: number): number {
 
 /**
  * Adult long-press reset (SPEC §14.2): three seconds on the level numeral opens the confirm
- * step, and a normal tap never gets that far.
+ * step, and a normal tap never gets that far. `shakeMs` is the stylesheet's half-second shake,
+ * emitted as `--shake-ms` (ADR 0004).
  */
 export const ADULT_RESET = {
   holdMs: 3000,
   /** The confirm step gives up if the adult stops interacting, so it never lingers. */
   confirmTimeoutMs: 15000,
+  shakeMs: 500,
 } as const
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CELEBRATION, LAYOUT } from '../game/constants'
+import { CELEBRATION, CHROME, LAYOUT } from '../game/constants'
 import { computeLayout } from './layout'
 
 /**
@@ -116,8 +116,8 @@ describe('layout on the target tablet (SPEC §13)', () => {
       // Centre the board in its row: the margin left over is the padding plus a remainder, so the board is
       // fully visible at both ends rather than flush against one and past the other.
       const margin = (areaHeight - metrics.boardPx) / 2
-      expect(margin).toBeGreaterThanOrEqual(LAYOUT.chrome.boardAreaPaddingPx - 1)
-      expect(metrics.boardPx + 2 * LAYOUT.chrome.boardAreaPaddingPx).toBeLessThanOrEqual(areaHeight)
+      expect(margin).toBeGreaterThanOrEqual(CHROME.boardAreaPaddingPx - 1)
+      expect(metrics.boardPx + 2 * CHROME.boardAreaPaddingPx).toBeLessThanOrEqual(areaHeight)
     }
   })
 
@@ -132,8 +132,9 @@ describe('layout on the target tablet (SPEC §13)', () => {
 /**
  * Issue #10's acceptance criteria are numbers, so they are asserted as numbers: the panel has to show the
  * level label, both goal cards and a whole rack at once without scrolling, the board has to be the dominant
- * half, and nothing in the shell may be a fixed pixel layout. `LAYOUT.chrome` is the stylesheet's own chrome
- * mirrored, so these are the same measurements `style.css` makes (styles.test.ts compares the mirror).
+ * half, and nothing in the shell may be a fixed pixel layout. `CHROME` is the stylesheet's own chrome now:
+ * the build emits it as custom properties and `style.css` reads them (ADR 0004), so these are the same
+ * measurements `style.css` paints.
  */
 describe('the panel shows everything at once (SPEC §8.2, §13, issue #10)', () => {
   it('holds the level label, both goal cards and the whole rack in the panel column', () => {
@@ -157,7 +158,7 @@ describe('the panel shows everything at once (SPEC §8.2, §13, issue #10)', () 
 
     // The headroom is the spare rows, which is what keeps the panel from clipping a rack at the plateau.
     const headroom = metrics.panelContentPx - metrics.panelChromePx - metrics.rackHeightPx
-    expect(headroom).toBeGreaterThanOrEqual(3 * (metrics.bubblePx + LAYOUT.chrome.rackRowPx))
+    expect(headroom).toBeGreaterThanOrEqual(3 * (metrics.bubblePx + CHROME.rackRowPx))
   })
 
   it('the same fit holds at the measured plateau, which is what ADR 0001 sizes for (issue #8)', () => {
@@ -184,8 +185,8 @@ describe('the panel shows everything at once (SPEC §8.2, §13, issue #10)', () 
     // 208 for the rack. Sized from the measurement rather than the pre-measurement guess, and laid out as §13's
     // horizontal band, it needs 3 rows of the 6 those measurements allow - so this is the criterion holding,
     // not a shortfall reported against it.
-    const bandWidth = 600 - 2 * LAYOUT.chrome.panelPaddingXPx - LAYOUT.chrome.rackMarginPx - 2 * LAYOUT.chrome.rackPaddingXPx
-    const rackRowPx = portrait.bubblePx + LAYOUT.chrome.rackRowPx
+    const bandWidth = 600 - 2 * CHROME.panelPaddingXPx - CHROME.rackMarginPx - 2 * CHROME.rackPaddingXPx
+    const rackRowPx = portrait.bubblePx + CHROME.rackRowPx
     expect(bandWidth).toBe(532)
     expect(portrait.rackColumns).toBe(17)
     expect(portrait.rackColumns * rackRowPx).toBeLessThanOrEqual(bandWidth)
@@ -197,7 +198,7 @@ describe('the panel shows everything at once (SPEC §8.2, §13, issue #10)', () 
     expect(Math.ceil(12 / portrait.rackColumns)).toBeLessThanOrEqual(portrait.rackRowsFit)
 
     // And what the band shows is inside the panel: it keeps its reserved place and its cards.
-    expect(portrait.rackRows * rackRowPx + 2 * LAYOUT.chrome.rackPaddingPx + portrait.panelChromePx)
+    expect(portrait.rackRows * rackRowPx + 2 * CHROME.rackPaddingPx + portrait.panelChromePx)
       .toBeLessThanOrEqual(portrait.panelContentPx)
   })
 })
@@ -229,7 +230,7 @@ describe('the board is the dominant half (SPEC §13, issue #10)', () => {
     expect(metrics.boardFitsArea).toBe(true)
 
     // The board is centred inside its area, so what the cell does not use is the margin §13 asks for.
-    expect(TABLET.height - metrics.boardPx).toBeGreaterThanOrEqual(2 * LAYOUT.chrome.boardAreaPaddingPx)
+    expect(TABLET.height - metrics.boardPx).toBeGreaterThanOrEqual(2 * CHROME.boardAreaPaddingPx)
   })
 })
 
@@ -245,10 +246,10 @@ describe('the bunch geometry layout owns (SPEC §10.1, issue #32)', () => {
     // The two offsets are the slack shared between the two sides, so the board is inside the overlay at both
     // ends rather than flush against one: the padding plus half the slack inside the content box, which is a
     // half pixel on the tablet and therefore rounded - so the check is within the rounding it is allowed.
-    const slackX = Math.round(TABLET.width * (1 - LAYOUT.panelWidthFraction)) - 2 * LAYOUT.chrome.boardAreaPaddingPx - metrics.boardPx
-    const slackY = TABLET.height - 2 * LAYOUT.chrome.boardAreaPaddingPx - metrics.boardPx
-    expect(Math.abs(2 * (metrics.boardOffsetXPx - LAYOUT.chrome.boardAreaPaddingPx) - slackX)).toBeLessThanOrEqual(1)
-    expect(Math.abs(2 * (metrics.boardOffsetYPx - LAYOUT.chrome.boardAreaPaddingPx) - slackY)).toBeLessThanOrEqual(1)
+    const slackX = Math.round(TABLET.width * (1 - LAYOUT.panelWidthFraction)) - 2 * CHROME.boardAreaPaddingPx - metrics.boardPx
+    const slackY = TABLET.height - 2 * CHROME.boardAreaPaddingPx - metrics.boardPx
+    expect(Math.abs(2 * (metrics.boardOffsetXPx - CHROME.boardAreaPaddingPx) - slackX)).toBeLessThanOrEqual(1)
+    expect(Math.abs(2 * (metrics.boardOffsetYPx - CHROME.boardAreaPaddingPx) - slackY)).toBeLessThanOrEqual(1)
 
     // The same measurement on a portrait turn, where the board is 558 px inside a 600 px row.
     const portrait = computeLayout({ width: 600, height: 1024 }, GRID)
@@ -366,6 +367,6 @@ describe('nothing is a fixed pixel layout, and a too-small device is flagged (SP
 
 /** A goal card row, the ring being taller than the numeral inside it (SPEC §8.1). */
 function goalCardRowPxFor(goalPx: number): number {
-  return Math.max(LAYOUT.chrome.goalRingPx, goalPx) + 2 * LAYOUT.chrome.goalPaddingPx
+  return Math.max(CHROME.goalRingPx, goalPx) + 2 * CHROME.goalPaddingPx
 }
 

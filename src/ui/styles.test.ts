@@ -2,15 +2,18 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { CELEBRATION, FONTS, LAYOUT } from '../game/constants'
+import { CELEBRATION, CHROME, FONTS, LAYOUT } from '../game/constants'
+import { CSS_TOKENS } from '../../scripts/tokens'
 import { CONFIRM_GLYPH, SHAKE_MS } from './adultReset'
 import { canPlace } from './bunch'
 import { bunchMetricsFor, computeLayout } from './layout'
 
 /**
- * The stylesheet is part of the shipped code, so it is checked against the same numbers the
- * modules work from. CSS cannot read `game/constants.ts`, which is why `baseline.test.ts` already
- * reads it for engine-newer tokens; this is the same idea for the numbers that have to agree.
+ * The stylesheet is part of the shipped code, so it is checked against the same numbers the modules
+ * work from. The numbers a module owns are no longer written here: `scripts/tokens.ts` emits them into
+ * the sheet at build time (ADR 0004), and this suite reads the block rather than a second copy. What it
+ * still checks is the part a token cannot: that the rule which paints a number reads the token, and
+ * that the layer/behaviour the SPEC asks for survives the sheet being rewritten in terms of tokens.
  */
 
 const SRC = dirname(fileURLToPath(import.meta.url))
@@ -57,7 +60,9 @@ function keyframesBlock(name: string): string {
 
 /** The furthest each axis travels in a `translate(x, y)` keyframe set, in CSS px. */
 function ceilingsForKeyframe(name: string): { x: number; y: number } {
-  const block = keyframesBlock(name)
+  // The keyframes read tokens rather than literals (ADR 0004), and the negative steps are `calc(-1 * ...)`,
+  // so the values are substituted before the travel is read.
+  const block = resolveTokens(keyframesBlock(name)).replace(/calc\(\s*-1\s*\*\s*(-?[\d.]+)px\s*\)/g, '-$1px')
   const pattern = /translate\((-?[\d.]+)(?:px)?,\s*(-?[\d.]+)(?:px)?\)/g
   let x = 0
   let y = 0
@@ -68,6 +73,18 @@ function ceilingsForKeyframe(name: string): { x: number; y: number } {
     match = pattern.exec(block)
   }
   return { x, y }
+}
+
+/** A token's value, failing loudly rather than comparing against `undefined`. */
+function tokenOf(name: string): string {
+  const value = CSS_TOKENS[name]
+  if (value === undefined) throw new Error(`no CSS token ${name}`)
+  return value
+}
+
+/** The stylesheet with every generated token substituted, so a rule can be read as the values it paints. */
+function resolveTokens(text: string): string {
+  return text.replace(/var\(\s*(--[a-z0-9-]+)\s*\)/g, (whole, name: string) => CSS_TOKENS[name] ?? whole)
 }
 
 /**
@@ -88,22 +105,6 @@ function ruleFor(selector: string): string {
     i = close + 1
   }
   return ''
-}
-
-/**
- * The CSS px a declaration reserves, read at 1rem = 16 px. `LAYOUT.chrome` mirrors these numbers because
- * `computeLayout` charges them against the panel and board areas, so the fit it reports has to be measured
- * against the chrome this file actually reserves.
- */
-function dimensionFor(selector: string, property: string, index: number): number | null {
-  const block = ruleFor(selector)
-  const match = block.match(new RegExp(`(?:^|[;{])\\s*${property}:([^;}]+)`))
-  if (!match) return null
-  const value = (match[1] || '').trim().split(/\s+/)[index]
-  if (!value) return null
-  const number = parseFloat(value)
-  if (Number.isNaN(number)) return null
-  return value.endsWith('rem') ? Math.ceil(number * 16) : number
 }
 
 /** The custom properties the shell reads, and the ones `applyLayout` writes. vitest runs in node (see
@@ -131,7 +132,9 @@ describe('celebration stylesheet', () => {
     // `both`/`forwards` keeps the final keyframe - `transform: translateY(0) scale(1)` - applying after
     // the rise ends, and animation values beat a transition, so the pop had nothing to animate.
     // `backwards` still hides a balloon until its stagger arrives.
-    expect(rule('.balloon')).toContain(`animation: balloon-rise ${CELEBRATION.balloonRiseMs}ms ${CELEBRATION.balloonRiseEase} backwards`)
+    expect(rule('.balloon')).toContain('animation: balloon-rise var(--balloon-rise-ms) var(--balloon-rise-ease) backwards')
+    expect(tokenOf('--balloon-rise-ms')).toBe(`${CELEBRATION.balloonRiseMs}ms`)
+    expect(tokenOf('--balloon-rise-ease')).toBe(CELEBRATION.balloonRiseEase)
     expect(rule('.balloon')).not.toContain('both')
     // Issue #26: one transform owner per element. The shape owns the pop, so no animation may claim
     // its transform; the float owns the endless sway/bob instead.
@@ -141,9 +144,9 @@ describe('celebration stylesheet', () => {
   })
 
   it('holds the play button fallback at the constant, while the module writes the per-party delay', () => {
-    // Issue #28: `--play-button-delay` is written inline from the rise and the stagger. The root value
-    // is only the no-JS/Chrome 61 fallback, so the stylesheet pins this and not the shipped number.
-    expect(css).toContain(`--play-button-delay: ${CELEBRATION.playButtonDelayMs}ms`)
+    // Issue #28: `--play-button-delay` is written inline from the rise and the stagger. The `:root` value
+    // is only the no-JS fallback, so the token carries `CELEBRATION.playButtonDelayMs`.
+    expect(tokenOf('--play-button-delay')).toBe(`${CELEBRATION.playButtonDelayMs}ms`)
     expect(rule('.next')).toContain('animation-delay')
     expect(rule('.next')).toContain('var(--play-button-delay)')
   })
@@ -154,7 +157,8 @@ describe('celebration stylesheet', () => {
     // the centres belong to `ui/bunch.ts`, and the only percent the stylesheet still owns is the band the
     // arrow sits in.
     expect(rule('.celebration')).toContain('justify-content: flex-end')
-    expect(rule('.celebration')).toContain(`padding-bottom: ${LAYOUT.celebrationBottomPaddingPct}%`)
+    expect(rule('.celebration')).toContain('padding-bottom: var(--arrow-band)')
+    expect(tokenOf('--arrow-band')).toBe(`${LAYOUT.celebrationBottomPaddingPct}%`)
     expect(rule('.balloon')).toContain('position: absolute')
     // The rule owns the gap between balloons, so the stylesheet cannot hold a rival copy of it as a margin box.
     expect(rule('.balloon')).not.toContain('margin')
@@ -173,10 +177,11 @@ describe('celebration stylesheet', () => {
     // from the board's - the board starts `boardOffsetYPx` inside the overlay. That is a place the rule takes.
     // In landscape `.board-area` is the whole 600 CSS px height; `landscapeBoardFraction` sizes the cell inside
     // it, it is not the overlay's own height, which is exactly the confusion a percent band produced.
-    const percent = dimensionFor('.balloon', 'bottom', 0)
+    expect(rule('.balloon')).toContain('bottom: var(--balloon-band)')
+    const percent = parseFloat(tokenOf('--balloon-band'))
     expect(percent).toBe(LAYOUT.balloonBandBottomMin)
     const overlayHeightPx = 600
-    const fallbackY = overlayHeightPx * ((percent as number) / 100) - tablet.boardOffsetYPx
+    const fallbackY = overlayHeightPx * (percent / 100) - tablet.boardOffsetYPx
     expect(fallbackY).toBe(270)
     expect(canPlace(board, { x: board.boardWidthPx / 2, y: fallbackY, size: tablet.balloonPx })).toBe(true)
     // And it is clear of the arrow's band, which is the other half of the same rule.
@@ -187,24 +192,24 @@ describe('celebration stylesheet', () => {
     expect(css).toContain('transform: translateY(600%) scale(0.7)')
   })
 
-  it('sizes the balloons from the custom property, with a plain-px fallback and no clamp (issues #25, #32)', () => {
+  it('sizes the balloons from the custom property, with no second copy of the floor (issues #25, #32)', () => {
     const balloon = rule('.balloon')
-    // The plain values are the Chrome 61 fallback, and both sides of the height mirror the constants:
-    // `balloonPxMin` is the floor `ui/layout.ts` applies, and `balloonHeightRatio` is the ratio the
-    // placement rule reads as the pop overshoot, so the stylesheet cannot disagree with it.
-    expect(balloon).toContain(`width: ${LAYOUT.balloonPxMin}px`)
-    expect(balloon).toContain(`var(--balloon-px, ${LAYOUT.balloonPxMin}px)`)
-    expect(balloon).toContain(`height: ${Math.round(LAYOUT.balloonPxMin * LAYOUT.balloonHeightRatio)}px`)
-    expect(balloon).toContain(`calc(var(--balloon-px, ${LAYOUT.balloonPxMin}px) * ${LAYOUT.balloonHeightRatio} * var(--balloon-jitter, 1))`)
+    // Both sides of the height read tokens: `balloonPxMin` is the floor `ui/layout.ts` applies, and
+    // `balloonHeightRatio` is the ratio the placement rule reads as the pop overshoot, so the stylesheet
+    // cannot disagree with either.
+    expect(balloon).toContain('width: calc(var(--balloon-px) * var(--balloon-jitter))')
+    expect(balloon).toContain(
+      'height: calc(var(--balloon-px) * var(--balloon-ratio) * var(--balloon-jitter))',
+    )
     expect(balloon).toContain('var(--balloon-jitter')
+    expect(tokenOf('--balloon-px')).toBe(`${LAYOUT.balloonPxMin}px`)
+    expect(tokenOf('--balloon-ratio')).toBe(String(LAYOUT.balloonHeightRatio))
     // `clamp()` is Chrome 79 and the engine baseline is 61, so the floor lives in the layout module.
     expect(balloon).not.toContain('clamp(')
     // Issue #32: the bunch's spacing is the placement rule's, not a margin box, and the only spacing number
-    // in CSS is the band the arrow owns - which is `LAYOUT.celebrationBottomPaddingPct`, mirrored here.
+    // in CSS is the band the arrow owns - which is the `--arrow-band` token.
     expect(balloon).not.toContain('margin')
-    expect(rule('.celebration')).toContain(`padding-bottom: ${LAYOUT.celebrationBottomPaddingPct}%`)
-    // The root fallback is the same floor as the rule's, held to the constant rather than to a round number.
-    expect(css).toContain(`--balloon-px: ${LAYOUT.balloonPxMin}px`)
+    expect(rule('.celebration')).toContain('padding-bottom: var(--arrow-band)')
   })
 
   it('gives each transform one owner, so a balloon tapped mid-rise still pops (issue #26)', () => {
@@ -215,18 +220,19 @@ describe('celebration stylesheet', () => {
     expect(rule('.balloon__shape')).toContain('transition: transform')
     expect(rule('.balloon--popped .balloon__shape')).toContain('transform: scale(')
     // Issue #35: the pop is a collapse to nothing, so the shape owns opacity as well as transform, and the
-    // collapse is the length the module schedules its removal timer from. Held to the constant, so the timer
-    // cannot fire before the collapse has finished - which is the difference between a balloon that leaves
-    // the layer and a stub that stays poppable.
+    // collapse is the length the module schedules its removal timer from. Both read the same token, so the
+    // timer cannot fire before the collapse has finished - which is the difference between a balloon that
+    // leaves the layer and a stub that stays poppable.
     expect(rule('.balloon__shape')).toContain(
-      `transition: transform ${CELEBRATION.balloonCollapseMs}ms ease-out, opacity ${CELEBRATION.balloonCollapseMs}ms ease-out`,
+      'transition: transform var(--balloon-collapse-ms) ease-out, opacity var(--balloon-collapse-ms) ease-out',
     )
+    expect(tokenOf('--balloon-collapse-ms')).toBe(`${CELEBRATION.balloonCollapseMs}ms`)
     expect(rule('.balloon--popped .balloon__shape')).toContain('opacity: 0')
     // Issue #35: `.balloon--popped` has a rule of its own now, and it has to. The assertion that it had none
     // is what locked the ghost in - she tapped the same balloon over and over because the poppable stub kept
     // its hit box. The hit box is the button, so the button has to stop taking taps while the shape collapses.
     expect(rule('.balloon--popped')).toContain('pointer-events: none')
-    // The float keyframes carry both axes at ±7 and ±8 CSS px.
+    // The float keyframes carry both axes at ±`balloonSwayPx` and ±`balloonBobPx`, through tokens.
     expect(ceilingsForKeyframe('balloon-float')).toEqual({ x: CELEBRATION.balloonSwayPx, y: CELEBRATION.balloonBobPx })
   })
 
@@ -301,10 +307,10 @@ describe('shell (SPEC §13, issue #10)', () => {
     expect(overlay).toContain('bottom: 0')
   })
 
-  it('the shell is the grid the layout module drives, with a plain fallback for Chrome 61 (SPEC §6)', () => {
+  it('the shell is the grid the layout module drives, from the emitted fraction token (SPEC §6, ADR 0004)', () => {
     const shell = rule('.game')
-    expect(shell).toContain('grid-template-columns: 30% 70%')
-    expect(shell).toContain('--panel-width-fraction')
+    expect(shell).toContain('grid-template-columns: calc(var(--panel-width-fraction) * 100%) 1fr')
+    expect(parseFloat(tokenOf('--panel-width-fraction'))).toBe(LAYOUT.panelWidthFraction)
     expect(shell).toContain('--panel-height-fraction')
     // `#app` is more specific than `.game`, so it must not carry a display that would beat the grid.
     expect(rule('#app')).not.toContain('display')
@@ -320,19 +326,17 @@ describe('shell (SPEC §13, issue #10)', () => {
   })
 
   it('the level label and the mute have reserved places at least as big as the smallest target', () => {
-    expect(rule('.panel__level')).toContain('min-height: var(--tap-min-px, 64px)')
-    expect(rule('.mute')).toContain('var(--tap-min-px, 64px)')
+    expect(rule('.panel__level')).toContain('min-height: var(--tap-min-px)')
+    expect(rule('.mute')).toContain('var(--tap-min-px)')
     // Issue #10 extends the same rule across the shell: the play arrow on the board and the rack block. A
     // rack bubble stays inside SPEC §8.2's 22-26 px, so the 64 px is the place the block reserves rather
     // than a bubble's size, and the block is what shrinks when the panel has less than the row it needs.
-    expect(rule('.next')).toContain('min-width: var(--tap-min-px, 64px)')
-    expect(rule('.next')).toContain('min-height: var(--tap-min-px, 64px)')
-    expect(rule('.rack')).toContain('min-height: var(--tap-min-px, 64px)')
+    expect(rule('.next')).toContain('min-width: var(--tap-min-px)')
+    expect(rule('.next')).toContain('min-height: var(--tap-min-px)')
+    expect(rule('.rack')).toContain('min-height: var(--tap-min-px)')
     expect(rule('.rack__bubble')).not.toMatch(/min-(width|height)/)
-    // Every place reads the number the layout module writes, so the reserved 64 px cannot drift from it.
-    expect(rule('.panel__level')).toContain(`min-height: var(--tap-min-px, ${LAYOUT.interactiveMinPx}px)`)
-    expect(rule('.next')).toContain(`var(--tap-min-px, ${LAYOUT.interactiveMinPx}px)`)
-    expect(rule('.rack')).toContain(`var(--tap-min-px, ${LAYOUT.interactiveMinPx}px)`)
+    // Every place reads the one token, whose default is the number the layout module reserves.
+    expect(tokenOf('--tap-min-px')).toBe(`${LAYOUT.interactiveMinPx}px`)
   })
 })
 
@@ -340,10 +344,12 @@ describe('rack stylesheet (SPEC §8.2, issue #8)', () => {
   it('is a wrapping grid, because a plateau rack of 35 bubbles cannot fit one row', () => {
     const rack = rule('.rack')
     expect(rack).toContain('display: grid')
-    expect(rack).toContain('repeat(var(--rack-columns, 4), var(--bubble-px, 22px))')
+    expect(rack).toContain('repeat(var(--rack-columns), var(--bubble-px))')
     expect(rule('.rack__bubble')).toContain('position: relative')
-    // SPEC §8.2's 3-4 per row is what the layout module chooses within, and the rows are the wrap.
-    expect(rack).toContain('grid-template-columns: repeat(4, 22px)')
+    // SPEC §8.2's 3-4 per row is what the layout module chooses within, and the rows are the wrap. The
+    // defaults are the constants the module measures from, so a no-JS page still draws a full rack.
+    expect(tokenOf('--rack-columns')).toBe(String(LAYOUT.rackColumnsMax))
+    expect(tokenOf('--bubble-px')).toBe(`${LAYOUT.bubblePxMin}px`)
   })
 
   it('the bubble that just paid for a tap sparkles in the same frame as the pop (issue #8)', () => {
@@ -360,7 +366,8 @@ describe('rack stylesheet (SPEC §8.2, issue #8)', () => {
 
 describe('adult reset stylesheet', () => {
   it('shakes the numeral for half a second, matching the constant the module works from', () => {
-    expect(rule('.panel__level-value.panel__level--shaking')).toContain(`animation: level-shake ${SHAKE_MS}ms`)
+    expect(rule('.panel__level-value.panel__level--shaking')).toContain('animation: level-shake var(--shake-ms) ease-in-out')
+    expect(tokenOf('--shake-ms')).toBe(`${SHAKE_MS}ms`)
     expect(SHAKE_MS).toBe(500)
   })
 
@@ -387,8 +394,9 @@ describe('adult reset stylesheet', () => {
 describe('mute stylesheet', () => {
   it('the mute is a 64 CSS px target (SPEC §11, §13)', () => {
     const mute = rule('.mute')
-    expect(mute).toContain('width: 64px')
-    expect(mute).toContain('height: 64px')
+    expect(mute).toContain('width: var(--tap-min-px)')
+    expect(mute).toContain('height: var(--tap-min-px)')
+    expect(tokenOf('--tap-min-px')).toBe('64px')
   })
 
   it('it sits in the panel corner, which is the one place it can never overlap the board (issue #17)', () => {
@@ -441,9 +449,9 @@ describe('the shell cannot scroll (SPEC §13, issue #10)', () => {
 })
 
 describe('the shell sizes itself from the custom properties the layout writes (SPEC §13, issue #10)', () => {
-  it('every custom property the shell reads is one `applyLayout` writes, or is defined at `:root`', () => {
+  it('every custom property the shell reads is one `applyLayout` writes, is a token, or is defined at `:root`', () => {
     for (const name of customPropertiesRead()) {
-      expect(layoutWrites(name) || css.includes(`${name}:`)).toBe(true)
+      expect(layoutWrites(name) || CSS_TOKENS[name] !== undefined || css.includes(`${name}:`)).toBe(true)
     }
     for (const name of ['--panel-width-fraction', '--panel-height-fraction']) {
       expect(ruleFor('.game')).toContain(`var(${name}`)
@@ -459,38 +467,54 @@ describe('the shell sizes itself from the custom properties the layout writes (S
     }
   })
 
-  it('the plain value beside each custom property is the fallback, not the layout (SPEC §6)', () => {
-    // Nothing here is a fixed pixel layout: each rule states its value twice, the plain one for an engine
-    // that cannot read custom properties and the derived one for the engine the game runs on. Where the
-    // layout module has a constant for the number, the fallback is held to it.
-    expect(ruleFor('.next')).toContain(`var(--play-px, ${LAYOUT.tapTargetCssPx}px)`)
-    expect(ruleFor('.rack')).toContain(`var(--bubble-px, ${LAYOUT.bubblePxMin}px)`)
-    expect(ruleFor('.rack')).toContain(`var(--rack-columns, ${LAYOUT.rackColumnsMax})`)
-    expect(ruleFor('.game')).toContain(`var(--panel-width-fraction, ${LAYOUT.panelWidthFraction})`)
-    expect(ruleFor('.panel__level-value')).toContain(`var(--level-px, ${FONTS.levelPx}px)`)
-    expect(ruleFor('.goal__numeral')).toContain(`var(--goal-px, ${FONTS.goalPx}px)`)
+  it('the unmeasured defaults are tokens carrying the constant, not a literal beside each rule', () => {
+    // `applyLayout` writes the measured values over these. Until it runs, the token block is what the page
+    // paints, so the fallback lives in one generated place rather than as a second number per declaration.
+    const defaults: Array<[string, string, string]> = [
+      ['.next', '--play-px', `${LAYOUT.tapTargetCssPx}px`],
+      ['.rack', '--bubble-px', `${LAYOUT.bubblePxMin}px`],
+      ['.rack', '--rack-columns', String(LAYOUT.rackColumnsMax)],
+      ['.game', '--panel-width-fraction', String(LAYOUT.panelWidthFraction)],
+      ['.panel__level-value', '--level-px', `${FONTS.levelPx}px`],
+      ['.goal__numeral', '--goal-px', `${FONTS.goalPx}px`],
+      ['.balloon', '--balloon-px', `${LAYOUT.balloonPxMin}px`],
+    ]
+    for (const [selector, name, value] of defaults) {
+      expect(ruleFor(selector)).toContain(`var(${name})`)
+      expect(ruleFor(selector)).not.toContain(`var(${name},`)
+      expect(tokenOf(name)).toBe(value)
+    }
   })
 
-  it('the chrome the layout model charges against the panel is the chrome this file reserves', () => {
-    // `computeLayout` measures the rack against the panel row inside its padding, using these numbers. If a
-    // rule here changes without the mirror in `LAYOUT.chrome` changing with it, `rackFitsPanel` is measuring
-    // a panel the stylesheet does not paint.
-    expect(dimensionFor('.panel', 'padding', 0)).toBe(LAYOUT.chrome.panelPaddingPx)
-    expect(dimensionFor('.panel', 'padding', 1)).toBe(LAYOUT.chrome.panelPaddingXPx)
-    expect(dimensionFor('.board-area', 'padding', 0)).toBe(LAYOUT.chrome.boardAreaPaddingPx)
-    expect(dimensionFor('.goal', 'padding', 0)).toBe(LAYOUT.chrome.goalPaddingPx)
-    expect(dimensionFor('.goal__ring', 'width', 0)).toBe(LAYOUT.chrome.goalRingPx)
-    expect(dimensionFor('.rack', 'padding', 0)).toBe(LAYOUT.chrome.rackPaddingPx)
-    expect(dimensionFor('.rack', 'padding', 1)).toBe(LAYOUT.chrome.rackPaddingXPx)
-    expect(dimensionFor('.rack', 'margin-left', 0)).toBe(LAYOUT.chrome.rackMarginPx)
-    expect(dimensionFor('.rack__bubble', 'margin-bottom', 0)).toBe(LAYOUT.chrome.rackRowPx)
+  it('the chrome the layout model charges against the panel is the chrome this file paints', () => {
+    // `computeLayout` measures the rack against the panel row inside its padding, using these numbers. Both
+    // sides now read `CHROME`: the module charges it, and the build emits it as the token the rule paints,
+    // so there is no mirror to keep in step. What is left to check is that every charged number reaches a
+    // rule and that the rule reads the token rather than a literal of its own.
+    const places: Array<[string, string, string, number]> = [
+      ['.panel', '--chrome-panel-padding', 'padding', CHROME.panelPaddingPx],
+      ['.panel', '--chrome-panel-padding-x', 'padding', CHROME.panelPaddingXPx],
+      ['.board-area', '--chrome-board-padding', 'padding', CHROME.boardAreaPaddingPx],
+      ['.goal', '--chrome-goal-padding', 'padding', CHROME.goalPaddingPx],
+      ['.goal__ring', '--chrome-goal-ring', 'width', CHROME.goalRingPx],
+      ['.rack', '--chrome-rack-padding', 'padding', CHROME.rackPaddingPx],
+      ['.rack', '--chrome-rack-padding-x', 'padding', CHROME.rackPaddingXPx],
+      ['.rack', '--chrome-rack-margin', 'margin-left', CHROME.rackMarginPx],
+      ['.rack__bubble', '--chrome-rack-row', 'margin-bottom', CHROME.rackRowPx],
+    ]
+    for (const [selector, name, property, value] of places) {
+      const block = ruleFor(selector)
+      expect(block).toContain(`${property}:`)
+      expect(block).toContain(`var(${name})`)
+      expect(tokenOf(name)).toBe(`${value}px`)
+    }
   })
 })
 
 describe('the board is the dominant half of the shell (SPEC §13, issue #10)', () => {
   it('the grid gives the panel the smaller track and the board the rest, in both orientations', () => {
     const shell = ruleFor('.game')
-    expect(shell).toContain('grid-template-columns: 30% 70%')
+    expect(shell).toContain('calc(var(--panel-width-fraction) * 100%)')
     expect(shell).toContain('1fr')
 
     // SPEC §13's 28-32% panel column, and the board taking whatever the panel does not.

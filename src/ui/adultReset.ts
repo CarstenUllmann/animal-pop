@@ -26,9 +26,9 @@ import type { Timer } from './timer'
 /** The whole message is one glyph, not a word, because she cannot read (SPEC §1). */
 export const CONFIRM_GLYPH = '✓'
 
-/** Half a second on the press (issue #16). CSS cannot read a constant, so `style.css` writes the
-   same number; the stylesheet test is what keeps the two from drifting apart. */
-export const SHAKE_MS = 500
+/** Half a second on the press (issue #16). CSS cannot read a constant, so the build emits
+    `ADULT_RESET.shakeMs` as `--shake-ms` and the stylesheet reads it (ADR 0004). */
+export const SHAKE_MS = ADULT_RESET.shakeMs
 
 export type { Timer } from './timer'
 

@@ -1,3 +1,7 @@
+/* Shipped colours, and the properties `ui/layout.ts` measures. The numbers a module also works from are
+   not written here: `scripts/tokens.ts` generates them into a `:root` block at the top of this file
+   (ADR 0004), so there is one copy of each and `styles.test.ts` holds the stylesheet to the tokens rather
+   than to a hand-maintained mirror. What is left below is what has no constant behind it. */
 :root {
   --bg: #101426;
   --bg-deep: #090c18;
@@ -9,21 +13,11 @@
   --yellow: #ffd166;
   --muted: #6c7aa5;
 
-  /* SPEC §6: the Chrome 61 baseline has no CSS custom properties, so every value
-     also has a plain fallback. Custom properties are set by ui/layout.ts. */
+  /* The measured square the board is drawn at; 96 px is what a page without script paints. */
   --cell: 96px;
-  --cols: 6;
-  --rows: 6;
 
-  /* The party balloons (issues #25, #32): ui/layout.ts writes the size from the measured board area, and
-     ui/celebration.ts writes a per-balloon jitter inline. These are the plain fallbacks, and this one is
-     `LAYOUT.balloonPxMin` - the same floor the layout module applies, so the two cannot disagree. */
-  --balloon-px: 120px;
+  /* The per-balloon ±6% the module draws from the injected Rng (issue #25); `1` is the unscripted size. */
   --balloon-jitter: 1;
-
-  /* The Chrome 61/no-JS fallback for the play arrow (issue #28). The shipped delay is derived per party
-     from CELEBRATION.balloonRiseMs and balloonStaggerMs and written inline by ui/celebration.ts. */
-  --play-button-delay: 1500ms;
 
   font-family: ui-rounded, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
   -webkit-text-size-adjust: 100%;
@@ -90,13 +84,11 @@ body {
 
 /* SPEC §13 (issue #10): the panel is the left column in landscape and stacks above the board in
    portrait (issue #19), with the board square and centred in the space that is left. The fractions come
-   from ui/layout.ts rather than from fixed pixels here. Chrome 61 has no custom properties (SPEC §6), so
-   the plain value is the fallback and the `var` line is what the game overrides on engines that read it. */
+   from ui/layout.ts rather than from fixed pixels here, and the token block gives them the values a page
+   without script paints (ADR 0004). */
 .game {
   display: grid;
-  grid-template-columns: 30% 70%;
-  grid-template-columns: calc(var(--panel-width-fraction, 0.3) * 100%) 1fr;
-  grid-template-rows: 100% 0%;
+  grid-template-columns: calc(var(--panel-width-fraction) * 100%) 1fr;
   grid-template-rows: calc(var(--panel-height-fraction, 1) * 100%) 1fr;
   flex: 1 1 auto;
   min-height: 0;
@@ -112,7 +104,7 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 1rem;
+  padding: var(--chrome-board-padding);
 }
 
 /* Chrome 61 does not know `aspect-ratio` (Chrome 88), so the board is sized from the cell. */
@@ -276,12 +268,12 @@ body {
   flex-direction: column;
   align-items: center;
   /* SPEC §10.1 phase 3: the play arrow fades in bottom-centre. The balloons are absolute and sit above
-     it, so the arrow never lands on top of a balloon she is trying to pop. The percent mirrors
-     `LAYOUT.celebrationBottomPaddingPct`, and the arrow's own 16 px band clear of its box is
-     `LAYOUT.balloonMarginPx`: `ui/layout.ts` reads this rule's number rather than declaring its own, so the
-     no-go line the placement rule refuses cannot drift from the band the arrow is painted in. */
+     it, so the arrow never lands on top of a balloon she is trying to pop. The band is the
+     `--arrow-band` token (LAYOUT.celebrationBottomPaddingPct), and the arrow's own 16 px clear of its box
+     is `LAYOUT.balloonMarginPx`: `ui/layout.ts` reads the same constants rather than declaring its own,
+     so the no-go line the placement rule refuses cannot drift from the band the arrow is painted in. */
   justify-content: flex-end;
-  padding-bottom: 4%;
+  padding-bottom: var(--arrow-band);
   background: rgba(9, 12, 24, 0.35);
 }
 
@@ -337,52 +329,52 @@ body {
 
 /* SPEC §10.1 phase 2 (issue #25): the balloons are the payoff, so they are sized from
    `--balloon-px` (written by ui/layout.ts from the measured board area) rather than a fingertip-sized
-   44px. The plain values are the Chrome 61 fallback, and they mirror `LAYOUT.balloonPxMin` - the floor
-   lives in the module because `clamp()` is newer than the engine - and the height ratio mirrors
-   `LAYOUT.balloonHeightRatio`. `--balloon-jitter` is the per-balloon ±6% the module draws from the injected
-   Rng. The layer places them with `left`/`bottom`, so they are positioned rather than flowed: `gap` is
-   newer than the engine, and since issue #32 the spacing does not come from a margin box either - the
-   centres are placed by `ui/bunch.ts`, and `LAYOUT.balloonMarginPx` is the keep-out from the board border,
-   which `styles.test.ts` and `layout.test.ts` compare against the constants.
+   44px. `--balloon-ratio` is the height over width from LAYOUT.balloonHeightRatio, and the floor lives in
+   the module because `clamp()` is newer than the engine. `--balloon-jitter` is the per-balloon ±6% the
+   module draws from the injected Rng. The layer places them with `left`/`bottom`, so they are positioned
+   rather than flowed: `gap` is newer than the engine, and since issue #32 the spacing does not come from a
+   margin box either - the centres are placed by `ui/bunch.ts`, and `LAYOUT.balloonMarginPx` is the keep-out
+   from the board border.
 
    Issue #26: the rise is an animation on the button, so the hit box travels with the balloon and a
    moving balloon can be tapped. `backwards`, not `both`: the fill only has to hide the balloon until
-   its stagger arrives, and a forwards fill would beat the shape's pop transform. */
+   its stagger arrives, and a forwards fill would beat the shape's pop transform. The easing and length
+   are the tokens `CELEBRATION.balloonRiseMs`/`balloonRiseEase` emit (ADR 0004). */
 .balloon {
   position: absolute;
-  bottom: 50%;
-  width: 120px;
-  height: 142px;
-  width: calc(var(--balloon-px, 120px) * var(--balloon-jitter, 1));
-  height: calc(var(--balloon-px, 120px) * 1.18 * var(--balloon-jitter, 1));
+  bottom: var(--balloon-band);
+  width: calc(var(--balloon-px) * var(--balloon-jitter));
+  height: calc(var(--balloon-px) * var(--balloon-ratio) * var(--balloon-jitter));
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
   touch-action: manipulation;
-  animation: balloon-rise 1200ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  animation: balloon-rise var(--balloon-rise-ms) var(--balloon-rise-ease) backwards;
 }
 
 /* One transform owner per element (issue #25): the button owns the rise, this span owns the endless
    sway/bob, and `.balloon__shape` owns the 260ms pop. Chrome 61 has no individual transform
-   properties, so the sway and the bob share one keyframe set: one sway cycle, two bob cycles. */
+   properties, so the sway and the bob share one keyframe set: one sway cycle, two bob cycles. The six
+   and a half seconds is the midpoint of `CELEBRATION.balloonFloatMsMin`/`Max`, emitted as a token. */
 .balloon__float {
   display: block;
   width: 100%;
   height: 100%;
-  animation: balloon-float 6.5s ease-in-out infinite;
+  animation: balloon-float var(--balloon-float-ms) ease-in-out infinite;
 }
 
 /* The pop is a transition, not a second animation, because the inline delay the module sets for the
    stagger would otherwise delay the pop as well. A tapped balloon pops at once.
    Issue #35: the pop is a collapse to nothing, not a shrink that leaves a stub. The shape owns transform
-   and opacity, `CELEBRATION.balloonCollapseMs` is how long the collapse takes, and the module removes the
-   element when it ends - on a timer it owns, never a `transitionend` listener. */
+   and opacity, `CELEBRATION.balloonCollapseMs` is how long the collapse takes - emitted as
+   `--balloon-collapse-ms` - and the module removes the element when it ends, on a timer it owns, never a
+   `transitionend` listener. */
 .balloon__shape {
   display: block;
   width: 100%;
   height: 100%;
-  transition: transform 180ms ease-out, opacity 180ms ease-out;
+  transition: transform var(--balloon-collapse-ms) ease-out, opacity var(--balloon-collapse-ms) ease-out;
 }
 
 /* Issue #35: the hit box goes with the balloon. `styles.test.ts` used to assert that `.balloon--popped` had
@@ -441,25 +433,25 @@ body {
     transform: translate(0, 0);
   }
   12.5% {
-    transform: translate(4.95px, 8px);
+    transform: translate(var(--balloon-sway-diag), var(--balloon-bob));
   }
   25% {
-    transform: translate(7px, 0);
+    transform: translate(var(--balloon-sway), 0);
   }
   37.5% {
-    transform: translate(4.95px, -8px);
+    transform: translate(var(--balloon-sway-diag), calc(-1 * var(--balloon-bob)));
   }
   50% {
     transform: translate(0, 0);
   }
   62.5% {
-    transform: translate(-4.95px, 8px);
+    transform: translate(calc(-1 * var(--balloon-sway-diag)), var(--balloon-bob));
   }
   75% {
-    transform: translate(-7px, 0);
+    transform: translate(calc(-1 * var(--balloon-sway)), 0);
   }
   87.5% {
-    transform: translate(-4.95px, -8px);
+    transform: translate(calc(-1 * var(--balloon-sway-diag)), calc(-1 * var(--balloon-bob)));
   }
   100% {
     transform: translate(0, 0);
@@ -468,18 +460,16 @@ body {
 
 /* The play arrow, SPEC §10.1 (issue #13): it appears once the last balloon has settled (issue #28), and
    the pulse is an adult-visible affordance, so reduced motion keeps the arrow still. The delay is the
-   custom property the module writes inline per party from the rise and the stagger; the literal 1500ms
-   is only the Chrome 61/no-JS fallback, mirroring CELEBRATION.playButtonDelayMs. The arrow is in the DOM
-   from the moment the party starts, and `next--ready` is the step that both shows it and lets it be hit,
-   so it is tappable the instant it is visible. */
+   custom property the module writes inline per party from the rise and the stagger; the `:root` value is
+   `CELEBRATION.playButtonDelayMs`, emitted as a token for the no-JS path. The arrow is in the DOM from the
+   moment the party starts, and `next--ready` is the step that both shows it and lets it be hit, so it is
+   tappable the instant it is visible. */
 .next {
   position: relative;
-  width: 90px;
-  height: 90px;
-  width: var(--play-px, 90px);
-  height: var(--play-px, 90px);
-  min-width: var(--tap-min-px, 64px);
-  min-height: var(--tap-min-px, 64px);
+  width: var(--play-px);
+  height: var(--play-px);
+  min-width: var(--tap-min-px);
+  min-height: var(--tap-min-px);
   padding: 0;
   border: 0;
   border-radius: 24%;
@@ -491,7 +481,6 @@ body {
   opacity: 0;
   pointer-events: none;
   animation: play-appear 300ms ease-out both;
-  animation-delay: 1500ms;
   animation-delay: var(--play-button-delay);
 }
 
@@ -523,7 +512,7 @@ body {
 
 /* SPEC §13 (issue #10): the panel is the left column in landscape and the top row in portrait, and it
    never scrolls - the rack wraps inside it instead of pushing anything off screen. The sizes come from
-   ui/layout.ts, with the plain values as the Chrome 61 fallback (SPEC §6). */
+   ui/layout.ts and the token block, not from fixed pixels here. */
 .panel {
   grid-row: 1;
   grid-column: 1;
@@ -538,7 +527,7 @@ body {
      own; clipping is what keeps the shell the size `ui/layout.ts` gave it. `min-height: 0` above is the
      other half of the same rule. */
   overflow: hidden;
-  padding: 0.8rem 1rem;
+  padding: var(--chrome-panel-padding) var(--chrome-panel-padding-x);
   background: var(--panel);
   border-right: 1px solid rgba(123, 223, 242, 0.2);
 }
@@ -549,15 +538,14 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 4rem;
-  min-height: var(--tap-min-px, 64px);
+  min-width: var(--tap-min-px);
+  min-height: var(--tap-min-px);
   cursor: pointer;
 }
 
 /* SPEC §13/§14.2: numerals are 40-56 CSS px and the level label is the long-press target. */
 .panel__level-value {
-  font-size: 44px;
-  font-size: var(--level-px, 44px);
+  font-size: var(--level-px);
   line-height: 1.1;
   font-weight: 700;
   color: var(--cream);
@@ -584,7 +572,7 @@ body {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 0.4rem 0.6rem;
+  padding: var(--chrome-goal-padding) 0.6rem;
   margin-right: 0.8rem;
   border-radius: 0.6rem;
   background: rgba(255, 255, 255, 0.05);
@@ -593,8 +581,8 @@ body {
 .goal__ring {
   position: relative;
   display: block;
-  width: 44px;
-  height: 44px;
+  width: var(--chrome-goal-ring);
+  height: var(--chrome-goal-ring);
   transform: rotate(-90deg);
 }
 
@@ -624,8 +612,7 @@ body {
 /* The ring is what she reads; the numeral is the adult backup (SPEC §8.1). Its size comes from
    ui/layout.ts, which scales it with the cell inside the bounds SPEC §13 gives. */
 .goal__numeral {
-  font-size: 32px;
-  font-size: var(--goal-px, 32px);
+  font-size: var(--goal-px);
   font-weight: 700;
   color: var(--cream);
   margin-left: 0.5rem;
@@ -644,20 +631,19 @@ body {
    gap. It is a wrapping grid rather than one row: the rack is 35 bubbles (SPEC §9.1, measured by the
    simulator), which no panel that must not scroll can show in a single row. Issue #19's "two lines"
    is what the early levels look like, not what level 11 is. The column count comes from the layout module:
-   3-4 in landscape, and in portrait the horizontal band §13 describes (ADR-0001), which is why the fallback
-   below is not the number the game runs with. */
+   3-4 in landscape, and in portrait the horizontal band §13 describes (ADR-0001), which is why the
+   `--rack-columns` token default is not the number the game runs with. */
 .rack {
   display: grid;
-  grid-template-columns: repeat(4, 22px);
-  grid-template-columns: repeat(var(--rack-columns, 4), var(--bubble-px, 22px));
+  grid-template-columns: repeat(var(--rack-columns), var(--bubble-px));
   align-self: stretch;
   /* Issue #10: the rack reserves a place inside the panel, and what does not fit is clipped there rather
      than scrolled or pushed onto the board. The 64 px is the block's place - a bubble stays inside
      SPEC §8.2's 22-26 px, so the block shrinks to its rows while the place it reserved does not. */
-  min-height: var(--tap-min-px, 64px);
+  min-height: var(--tap-min-px);
   overflow: hidden;
-  padding: 0.5rem 0.8rem;
-  margin-left: 0.6rem;
+  padding: var(--chrome-rack-padding) var(--chrome-rack-padding-x);
+  margin-left: var(--chrome-rack-margin);
   border-radius: 0.6rem;
   background: rgba(7, 10, 22, 0.6);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
@@ -665,11 +651,9 @@ body {
 
 .rack__bubble {
   position: relative;
-  width: 22px;
-  height: 22px;
-  width: var(--bubble-px, 22px);
-  height: var(--bubble-px, 22px);
-  margin-bottom: 6px;
+  width: var(--bubble-px);
+  height: var(--bubble-px);
+  margin-bottom: var(--chrome-rack-row);
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, var(--pink), rgba(255, 143, 163, 0.35));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
@@ -747,10 +731,8 @@ body {
   position: absolute;
   top: 0.5rem;
   right: 0.5rem;
-  width: 64px;
-  height: 64px;
-  width: var(--tap-min-px, 64px);
-  height: var(--tap-min-px, 64px);
+  width: var(--tap-min-px);
+  height: var(--tap-min-px);
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -794,7 +776,7 @@ body {
    icon that appears after three seconds. Reduced motion keeps the icon and drops the shake
    (SPEC §13). */
 .panel__level-value.panel__level--shaking {
-  animation: level-shake 500ms ease-in-out;
+  animation: level-shake var(--shake-ms) ease-in-out;
 }
 
 @keyframes level-shake {

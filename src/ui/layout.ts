@@ -1,4 +1,4 @@
-import { FONTS, LAYOUT, MAX_BALLOONS } from '../game/constants'
+import { CHROME, FONTS, LAYOUT, MAX_BALLOONS } from '../game/constants'
 import { bunchCapacity, spacingRungs, type BunchMetrics } from './bunch'
 
 export interface Viewport {
@@ -111,7 +111,7 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   // inside, and stays square by taking the smaller side. In portrait the panel is a row above the board,
   // so the board has the page width but not the height. Charging the padding is what keeps the bottom row
   // of a portrait board inside the viewport instead of painting under the page's `overflow: hidden`.
-  const boardPaddingPx = 2 * LAYOUT.chrome.boardAreaPaddingPx
+  const boardPaddingPx = 2 * CHROME.boardAreaPaddingPx
   const boardAreaWidthPx = portrait ? viewport.width : viewport.width - panelColumnPx
   const boardAreaHeightPx = portrait ? viewport.height - panelRowPx : viewport.height
   // Landscape's fraction is a cap that already leaves the padding its room (540 of 600 leaves 60);
@@ -128,13 +128,14 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   const playPx = between(Math.round(cell * 0.90), LAYOUT.tapTargetCssPx, LAYOUT.cellMaxPx)
 
   // Issue #10: the fit is measured against the panel and board areas the fractions give, using the chrome
-  // the stylesheet actually reserves (LAYOUT.chrome mirrors it), so a rack that fits here fits on screen.
-  const panelContentPx = panelRowPx - 2 * LAYOUT.chrome.panelPaddingPx
+  // the stylesheet paints (the same constants the build emits as `--chrome-*`), so a rack that fits here fits
+  // on screen.
+  const panelContentPx = panelRowPx - 2 * CHROME.panelPaddingPx
   // The two goal cards are charged as two stacked rows, which is the worst case: they sit side by side when
   // the panel is wide enough (issue #19), so the fit holds either way. The level label's box is the reserved
   // place, and the mute is positioned rather than flowed, so it takes no row of its own.
   const panelChromePx = LAYOUT.interactiveMinPx + 2 * goalCardRowPx(goalPx)
-  const rackRowPx = bubblePx + LAYOUT.chrome.rackRowPx
+  const rackRowPx = bubblePx + CHROME.rackRowPx
   const rackBubbles = LAYOUT.rackSizingBubbles
   // In landscape the rack keeps §8.2's 3-4 per row. In portrait §13 makes it a horizontal band across the
   // panel, so the columns are whatever the panel width gives it, capped by the rack itself - a band cannot
@@ -144,7 +145,7 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     ? bandColumnsFor(rackWidth, bubblePx, rackBubbles)
     : rackColumnsFor(rackWidth, bubblePx)
   const rackRows = Math.ceil(rackBubbles / rackColumns)
-  const rackRowsFit = Math.max(0, Math.floor((panelContentPx - panelChromePx - 2 * LAYOUT.chrome.rackPaddingPx) / rackRowPx))
+  const rackRowsFit = Math.max(0, Math.floor((panelContentPx - panelChromePx - 2 * CHROME.rackPaddingPx) / rackRowPx))
   const boardPx = cell * Math.max(grid.rows, grid.cols)
   // Issue #25: the balloon is the payoff, so it is sized from the board area it hangs over rather than
   // from a fixed 44px. Issue #32 raises the factors to 1.5x and the floor to 120 CSS px, which is the tap
@@ -163,8 +164,8 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   // on a phone) the board overhangs and the offset is the side it is read from, never a negative one.
   const contentWidthPx = boardAreaWidthPx - boardPaddingPx
   const contentHeightPx = boardAreaHeightPx - boardPaddingPx
-  const boardOffsetXPx = Math.max(0, Math.round(LAYOUT.chrome.boardAreaPaddingPx + (contentWidthPx - boardPx) / 2))
-  const boardOffsetYPx = Math.max(0, Math.round(LAYOUT.chrome.boardAreaPaddingPx + (contentHeightPx - boardPx) / 2))
+  const boardOffsetXPx = Math.max(0, Math.round(CHROME.boardAreaPaddingPx + (contentWidthPx - boardPx) / 2))
+  const boardOffsetYPx = Math.max(0, Math.round(CHROME.boardAreaPaddingPx + (contentHeightPx - boardPx) / 2))
 
   // The arrow's band: `.celebration`'s `padding-bottom` resolves against the overlay's width, the arrow box
   // is `playPx` tall inside it, and the same `balloonMarginPx` keeps the blob off the button. Read from the
@@ -214,7 +215,7 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     rackBubbles,
     rackRows,
     rackRowsFit,
-    rackHeightPx: rackRows * rackRowPx + 2 * LAYOUT.chrome.rackPaddingPx,
+    rackHeightPx: rackRows * rackRowPx + 2 * CHROME.rackPaddingPx,
     rackFitsPanel: rackRowsFit >= rackRows,
     boardPx,
     // The board is only pushed past its area when `cellMinPx` clamps a device smaller than SPEC §13 assumes,
@@ -254,11 +255,11 @@ export function applyLayout(root: HTMLElement, viewport: Viewport, grid: GridSiz
 
 /** SPEC §8.2: 3-4 bubbles per row, chosen so the rack fits the panel without scrolling. */
 function rackColumnsFor(rackWidth: number, bubblePx: number): number {
-  // The row spacing is `LAYOUT.chrome.rackRowPx`, the stylesheet's own value, rather than a fraction of the
+  // The row spacing is `CHROME.rackRowPx`, the stylesheet's own value, rather than a fraction of the
   // bubble: it is the same 6 px whatever the bubble size, and reading it as a fraction made the estimate
   // disagree with the rule. Charging no horizontal spacing keeps this the conservative side.
-  const rowWidth = bubblePx + LAYOUT.chrome.rackRowPx
-  const fits = Math.floor((rackWidth + LAYOUT.chrome.rackRowPx) / rowWidth)
+  const rowWidth = bubblePx + CHROME.rackRowPx
+  const fits = Math.floor((rackWidth + CHROME.rackRowPx) / rowWidth)
   return between(fits, LAYOUT.rackColumnsMin, LAYOUT.rackColumnsMax)
 }
 
@@ -269,26 +270,27 @@ function rackColumnsFor(rackWidth: number, bubblePx: number): number {
  * panel still keeps §8.2's 3 per row.
  */
 function bandColumnsFor(rackWidth: number, bubblePx: number, rackBubbles: number): number {
-  const fits = Math.floor((rackWidth + LAYOUT.chrome.rackRowPx) / (bubblePx + LAYOUT.chrome.rackRowPx))
+  const fits = Math.floor((rackWidth + CHROME.rackRowPx) / (bubblePx + CHROME.rackRowPx))
   return between(fits, LAYOUT.rackColumnsMin, rackBubbles)
 }
 
 /** The width the rack has: the panel's content box, less the chrome the stylesheet reserves around it. */
 function rackWidthFor(panelColumnPx: number): number {
-  // Every value here mirrors `style.css`, so the rack is measured against the panel it is painted inside
-  // rather than against a round number that happened to work on the target device (issue #10).
+  // Every value here is a `CHROME` constant the build emits as the token `style.css` paints, so the rack
+  // is measured against the panel it is painted inside rather than against a round number that happened
+  // to work on the target device (issue #10, ADR 0004).
   return Math.max(
     0,
     panelColumnPx -
-      2 * LAYOUT.chrome.panelPaddingXPx -
-      LAYOUT.chrome.rackMarginPx -
-      2 * LAYOUT.chrome.rackPaddingXPx,
+      2 * CHROME.panelPaddingXPx -
+      CHROME.rackMarginPx -
+      2 * CHROME.rackPaddingXPx,
   )
 }
 
 /** A goal card row. The ring is taller than the numeral it holds (SPEC §8.1), so the ring sets the height. */
 function goalCardRowPx(goalPx: number): number {
-  return Math.max(LAYOUT.chrome.goalRingPx, goalPx) + 2 * LAYOUT.chrome.goalPaddingPx
+  return Math.max(CHROME.goalRingPx, goalPx) + 2 * CHROME.goalPaddingPx
 }
 
 /**
