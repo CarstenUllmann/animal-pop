@@ -6,9 +6,9 @@
  * already knows it, so the only affordance is the half-second shake and the icon that appears after
  * the hold (SPEC §13).
  *
- * Only this module owns the timer, because the core must not touch the DOM or the clock (SPEC §15).
- * The timer comes in through the `Timer` seam, in the same spirit as `Clock` and `KeyValueStore` in
- * `bootlog.ts`, so nothing here has to be assumed to exist.
+ * Only the pointer handling lives here, because the core must not touch the DOM or the clock (SPEC §15).
+ * Delayed work comes in through the `Timer` seam from `ui/timer.ts`, in the same spirit as `Clock` and
+ * `KeyValueStore` in `bootlog.ts`, so nothing here has to be assumed to exist.
  */
 
 import { ADULT_RESET } from '../game/constants'
@@ -21,6 +21,7 @@ import {
   type AdultResetState,
 } from '../game/adultReset'
 import type { Clock } from './bootlog'
+import type { Timer } from './timer'
 
 /** The whole message is one glyph, not a word, because she cannot read (SPEC §1). */
 export const CONFIRM_GLYPH = '✓'
@@ -29,11 +30,7 @@ export const CONFIRM_GLYPH = '✓'
    same number; the stylesheet test is what keeps the two from drifting apart. */
 export const SHAKE_MS = 500
 
-export interface Timer {
-  /** Runs `run` after `ms`; the number it returns is what `clear` takes. */
-  after(ms: number, run: () => void): number
-  clear(id: number): void
-}
+export type { Timer } from './timer'
 
 export interface AdultResetDeps {
   clock: Clock

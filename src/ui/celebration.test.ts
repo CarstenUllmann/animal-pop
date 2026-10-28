@@ -43,9 +43,13 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
   it('owns and clears every timer it schedules, so a left party cannot tick into the next one', () => {
     expect(source).toContain('const timers: number[] = []')
     expect(section('function stop(): void {', 'return {')).toContain('clearTimers()')
-    // The stagger and the reveal go through the tracked helper rather than bare `setTimeout`; the one
-    // direct call is inside `later` itself.
-    expect(source.match(/window\.setTimeout/g)).toHaveLength(1)
+    // Delayed work goes through the injected `Timer`, never through the module's own window: that is what
+    // lets the mount test advance the collapse instead of sleeping through it, and it keeps this module as
+    // testable as `ui/adultReset.ts`, which takes the same seam.
+    expect(source).not.toContain('window.setTimeout')
+    expect(source).not.toContain('window.clearTimeout')
+    expect(section('function later(', 'function clearTimers')).toContain('opts.timer.after(')
+    expect(section('function clearTimers(', '// Reduced motion')).toContain('opts.timer.clear(')
   })
 
   it('derives the play-arrow delay from the party the set actually has (issue #28)', () => {

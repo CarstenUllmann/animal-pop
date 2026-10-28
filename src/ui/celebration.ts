@@ -14,6 +14,7 @@ import { bunchFactor, clampToBoard, placeBunch, placeSlot, type BunchMetrics, ty
 import { hasMatchMedia } from './capabilities'
 import { createFrameTierMeter, type FrameTier } from './frameTier'
 import { createPool } from './pool'
+import type { Timer } from './timer'
 
 export type { FrameTier } from './frameTier'
 
@@ -115,6 +116,9 @@ export interface CelebrationOptions {
    *  in the board, and the overlay is not the board, so a percentage of the overlay cannot be a place in it
    *  (issue #32, SPEC §10.1 *The bunch*). The placement rule never reads these numbers; the paint step does. */
   boardOrigin: () => { x: number; y: number }
+  /** Delayed work: the stagger, the play reveal and the exits (SPEC §15). A test advances it rather than
+   *  waiting, and `stop()` can only clear what came through here. */
+  timer: Timer
 }
 
 export function createCelebration(
@@ -191,16 +195,16 @@ export function createCelebration(
     // Only pending timers are kept: a party that is left open respawns a set of balloons every time she
     // pops them all, and a list that also held every timer already fired would grow for as long as she
     // plays (SPEC §10.1 phase 4, "idles indefinitely"). `clearTimers` then walks exactly what can still fire.
-    const id = window.setTimeout(() => {
+    const id = opts.timer.after(ms, () => {
       const at = timers.indexOf(id)
       if (at >= 0) timers.splice(at, 1)
       run()
-    }, ms)
+    })
     timers.push(id)
   }
 
   function clearTimers(): void {
-    for (const id of timers) window.clearTimeout(id)
+    for (const id of timers) opts.timer.clear(id)
     timers.length = 0
   }
 

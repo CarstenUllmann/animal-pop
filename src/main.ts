@@ -7,7 +7,7 @@ import { partySize } from './game/rules'
 import { readSave, writeSave } from './game/save'
 import { createLevelSession, type TapPlan } from './game/session'
 import type { PopResult, TapResult } from './game/types'
-import { mountAdultReset, type Timer } from './ui/adultReset'
+import { mountAdultReset } from './ui/adultReset'
 import { createBootLog, describeError } from './ui/bootlog'
 import { createBoardView } from './ui/boardView'
 import { capabilityFlags, engineToken, hasMatchMedia, hasRandomValues } from './ui/capabilities'
@@ -19,6 +19,7 @@ import { createMuteController, mountMuteToggle } from './ui/muteToggle'
 import { createPanelView } from './ui/panelView'
 import { installKidProofing } from './ui/shell'
 import { localStorageStore } from './ui/storage'
+import type { Timer } from './ui/timer'
 
 /**
  * Survivable boot — issue #23, and the composition root.
@@ -207,6 +208,7 @@ function start(root: HTMLElement): void {
     // board the game has now rather than the one the party started on.
     metrics: () => bunchMetricsFor(layout.boardPx, layout.balloonPx, layout.arrowBandPx),
     boardOrigin: () => ({ x: layout.boardOffsetXPx, y: layout.boardOffsetYPx }),
+    timer: timer(),
   })
 
   // The overlay measures frames itself, because the game is the only thing that knows which frames

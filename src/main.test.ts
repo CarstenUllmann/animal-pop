@@ -61,6 +61,9 @@ describe('the celebration hangs the bunch from the board the game has (issue #34
     const wiring = between(mainSource, 'const celebration = createCelebration(', '// The overlay measures frames itself')
     expect(wiring).toContain('metrics: () => bunchMetricsFor(layout.boardPx, layout.balloonPx, layout.arrowBandPx)')
     expect(wiring).toContain('boardOrigin: () => ({ x: layout.boardOffsetXPx, y: layout.boardOffsetYPx })')
+    // Delayed work comes from the composition root's adapter, which is the only place allowed to know the
+    // browser's clock (SPEC §15).
+    expect(wiring).toContain('timer: timer()')
 
     // The layer reads these on every set and on every re-clamp, so the handler has to apply the new layout
     // before it tells the layer to resize: a turn mid-party moves the balloons to the board the game has now.
