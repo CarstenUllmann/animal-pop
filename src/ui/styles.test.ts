@@ -230,6 +230,23 @@ describe('celebration stylesheet', () => {
     expect(ceilingsForKeyframe('balloon-float')).toEqual({ x: CELEBRATION.balloonSwayPx, y: CELEBRATION.balloonBobPx })
   })
 
+  it('outlines every balloon body, so overlapping bodies keep an edge (issue #49)', () => {
+    // The body is filled with the inherited colour and outlined in near-black. The stroke scales with the
+    // SVG viewBox, so `0.9` is SVG units rather than CSS px.
+    const body = rule('.balloon__svg ellipse')
+    expect(body).toContain('stroke: #0a0d16')
+    expect(body).toContain('stroke-width: 0.9')
+    expect(body).not.toContain('fill:')
+
+    // The outline belongs to the body only: the string stays a thin coloured line, not a dark shape.
+    expect(rule('.balloon__svg')).toContain('fill: currentColor')
+    const string = rule('.balloon__svg path')
+    expect(string).toContain('fill: none')
+    expect(string).toContain('stroke: currentColor')
+    expect(string).toContain('stroke-width: 1.5')
+    expect(string).not.toContain('#0a0d16')
+  })
+
   it('dim reads as a scrim on the overlay itself, not as a class on the board', () => {
     expect(rule('.celebration')).toContain('background: rgba(9, 12, 24, 0.35)')
     expect(css).not.toContain(':has(')

@@ -345,6 +345,18 @@ is still three elements — `.balloon` (button, owns the rise so the hit box tra
 pop exactly like one at rest. Period, phase and direction come from the injected `Rng`, so the bunch never
 moves in lockstep and a session still replays.
 
+**Colour and outline (issue #49).** Colour is decoration: nine fixed hues, with each new balloon coloured
+against the balloons it overlaps. Two balloons are neighbours when their centre distance is below the mean
+of their two jittered widths — the same metric that spaces the bunch. A newcomer takes a palette entry none
+of its neighbours is using; if neighbours already hold every entry, it repeats the least-used one. The
+opening bunch and every refill use the same rule, a refill is coloured against the bunch hanging at that
+moment, and an existing balloon is never recoloured. The choice uses the injected `Rng`, so colour still
+replays; placement is decided first, so colour cannot move a balloon.
+
+Every balloon body carries a thin `#0a0d16` outline at 0.9 SVG units. The body still fills from
+`currentColor` and the string keeps its own thin `currentColor` stroke, so the outline separates
+overlapping bodies without drawing a ring around the string.
+
 **The arrow (issue #28).** The ▶ waits for the last balloon to settle rather than a fixed beat: the
 delay is computed per party when the party starts and written inline as `--play-button-delay`, with
 `CELEBRATION.playButtonDelayMs` only as the stylesheet fallback. It is in the DOM from the start,

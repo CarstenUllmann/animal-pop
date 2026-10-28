@@ -405,6 +405,14 @@ body {
   fill: currentColor;
 }
 
+/* Issue #49: a thin near-black outline on every body, so overlapping balloons keep a visible edge even
+   when their fills are close in tone. The body still fills from `currentColor`; the string below stays a
+   thin coloured line with no outline of its own. */
+.balloon__svg ellipse {
+  stroke: #0a0d16;
+  stroke-width: 0.9;
+}
+
 /* The string is a line, not a shape, so it cannot be filled. */
 .balloon__svg path {
   fill: none;
