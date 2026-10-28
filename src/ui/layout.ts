@@ -12,6 +12,9 @@ export interface GridSize {
 }
 
 export interface LayoutMetrics {
+  /** The viewport the layout was computed for, which the overlay reports as the device measurement. */
+  viewportWidth: number
+  viewportHeight: number
   /** Panel column share of the width in landscape (SPEC §13). */
   panelWidthFraction: number
   /** Panel row share of the height in portrait, where the panel stacks above the board. */
@@ -180,6 +183,8 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   const bunchBoard = bunchMetricsFor(boardPx, balloonPx, arrowBandPx)
 
   return {
+    viewportWidth: viewport.width,
+    viewportHeight: viewport.height,
     panelWidthFraction,
     panelHeightFraction,
     boardFraction,

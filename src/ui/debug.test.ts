@@ -3,35 +3,37 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { ANIMAL_IDS } from '../game/animalIds'
+import { GRID } from '../game/constants'
 import { bubblesForLevel, createLevel, goalTargetForLevel } from '../game/level'
 import { readSave, toSaveState, writeSave, type SaveContext } from '../game/save'
-import type { KeyValueStore } from '../game/types'
+import type { KeyValueStore, LevelState } from '../game/types'
 import { describeError, traceLines, type BootLog, type BootRun } from './bootlog'
 import {
   DEBUG_ROWS,
   MAX_VALUE_LENGTH,
   cellText,
-  createRowModel,
-  debugRowText,
+  debugRowKeys,
   displayMode,
   errorText,
+  goalRowsFor,
   goalsText,
-  isDebugRow,
   motionPreference,
   nextLevelClick,
   parseDebugFlag,
   recordFps,
-  rowText,
+  snapshotRows,
   updateFps,
   viewportText,
+  type DebugMount,
+  type DebugSnapshot,
 } from './debug'
+import { computeLayout } from './layout'
 
 /**
  * Issue #18: the overlay is the only way to read the tablet, so it has to be live and readable from
  * across the room. Vitest runs in the node environment (vitest.config.ts), so the overlay cannot be
- * mounted in a test - what can be proved here is the pure layer, plus the shipped sources read as text:
- * the stylesheet, the way `styles.test.ts` reads it, and what `main.ts` actually reports, the way
- * `baseline.test.ts` reads those.
+ * mounted in a test - what can be proved here is the row model itself: one snapshot goes in, every
+ * row's text comes out. The stylesheet is read as text, because the row sizes are a stylesheet fact.
  */
 
 const SRC = dirname(fileURLToPath(import.meta.url))
@@ -87,6 +89,7 @@ function uniqueMatches(text: string, pattern: RegExp): string[] {
   return found
 }
 
+/** The body of a top-level function, so a wiring assertion reads the function rather than the file. */
 function functionBlock(source: string, header: string): string {
   const start = source.indexOf(header)
   if (start === -1) return ''
@@ -121,40 +124,6 @@ function runsAtLoad(text: string): string[] {
   return offenders
 }
 
-/** The two rows `debug.ts` reports through its own path - the frame samples and the trace subscription -
- *  because they are numbers only the overlay measures. Every other row has to be reported by the game. */
-const SELF_REPORTED = ['fps', 'boot']
-
-/** The mount object names two things differently from the row key it fills: `bubbles` shows as the rack
- *  row (SPEC §8), `bootLog` as the trace row (SPEC §14.3, issue #23). */
-function rowForMountKey(key: string): string {
-  if (key === 'bubbles') return 'rack'
-  if (key === 'bootLog') return 'boot'
-  return key
-}
-
-function mountInfoKeys(source: string): string[] {
-  const start = source.indexOf('mountDebugOverlay(')
-  if (start === -1) return []
-  const end = source.indexOf(': null', start)
-  const call = source.slice(start, end === -1 ? source.length : end)
-  return uniqueMatches(call, /^\s+([A-Za-z][A-Za-z0-9]*):/gm)
-}
-
-/** A row is only as live as the last thing the game reported for it, so a row that nothing reports after
- *  mount can never be live (issue #18). */
-function rowsThatCanNeverMove(source: string): string[] {
-  const reported = uniqueMatches(source, /debug\.set\('([a-z]+)'/g)
-  const missing: string[] = []
-  for (const row of DEBUG_ROWS) {
-    if (row.fixed) continue
-    if (reported.includes(row.key)) continue
-    if (SELF_REPORTED.includes(row.key)) continue
-    missing.push(row.key)
-  }
-  return missing
-}
-
 /** A boot log with both halves the row reads, so the previous-then-current rule can be checked in node. */
 function fakeBootLog(previous: BootRun | null, current: BootRun): BootLog {
   return {
@@ -175,6 +144,28 @@ function fakeStore(initial: Record<string, string> = {}): KeyValueStore {
       values.set(key, value)
       return true
     },
+  }
+}
+
+/** The facts fixed at boot, as `main.ts` hands them over. */
+function mountFor(overrides: Partial<DebugMount> = {}): DebugMount {
+  return {
+    seed: 0x3039,
+    display: 'standalone',
+    motion: 'reduced',
+    bootLog: fakeBootLog(null, { startedAt: 0, steps: [{ name: 'boot', at: 1 }], lastError: null }),
+    ...overrides,
+  }
+}
+
+/** One live snapshot, taken from a real dealt level rather than a hand-written shape. */
+function snapshotFor(overrides: Partial<DebugSnapshot> = {}): DebugSnapshot {
+  return {
+    state: createLevel(1, 0x3039, ANIMAL_IDS),
+    layout: computeLayout({ width: 1024, height: 600 }, { rows: GRID, cols: GRID }),
+    queue: 0,
+    live: null,
+    ...overrides,
   }
 }
 
@@ -224,49 +215,53 @@ describe('environment rows (issues #10, #19, #23)', () => {
     expect(cellText(89.6)).toBe('90px')
   })
 
-  it('paints the environment from the mount values', () => {
-    const rows = createRowModel({
-      display: 'standalone',
-      motion: 'reduced',
-      viewport: '1024×600',
-      cell: '90px',
-    })
-    expect(rows.text('display')).toBe('standalone')
-    expect(rows.text('motion')).toBe('reduced')
-    expect(rows.text('viewport')).toBe('1024×600')
-    expect(rows.text('cell')).toBe('90px')
+  it('paints the environment from the mount and the layout the game holds', () => {
+    const layout = computeLayout({ width: 1024, height: 600 }, { rows: GRID, cols: GRID })
+    const rows = snapshotRows(mountFor({ display: 'standalone', motion: 'reduced' }), snapshotFor({ layout }))
+    expect(rows['display']).toBe('standalone')
+    expect(rows['motion']).toBe('reduced')
+    expect(rows['viewport']).toBe('1024×600')
+    expect(rows['cell']).toBe(`${Math.round(layout.cell)}px`)
   })
 })
 
 describe('debug rows', () => {
-  it('accepts the rows the game can report and nothing else (issue #18)', () => {
+  it('paints exactly the rows it declares, and every one of them from the snapshot (issue #18)', () => {
+    const rows = snapshotRows(mountFor(), snapshotFor())
+    expect(Object.keys(rows)).toEqual(debugRowKeys())
     for (const key of ['level', 'seed', 'display', 'motion', 'viewport', 'cell', 'animals', 'rack', 'goals', 'queue', 'balloons', 'particles', 'tier', 'fps']) {
-      expect(isDebugRow(key)).toBe(true)
+      expect(rows[key]).not.toBe('')
     }
-    expect(isDebugRow('whatever')).toBe(false)
-    expect(isDebugRow('')).toBe(false)
+    // A row that is not declared has no place to be painted, so the record cannot grow a key the overlay
+    // would not have a line for.
+    expect(rows['whatever']).toBeUndefined()
   })
 
-  it('reports a row through the same helper `set` uses', () => {
-    expect(debugRowText('queue', '2')).toBe('2')
-    expect(debugRowText('goals', 'lion 2 left')).toBe('lion 2 left')
-  })
-
-  it('paints nothing for an unknown key', () => {
-    expect(debugRowText('whatever', '3')).toBe('')
-    expect(rowText('whatever', 3)).toBe('')
+  it('reads one snapshot for every row, so two reports can only differ where the snapshot differed', () => {
+    // This is issue #18's real property: a row cannot be stale, because there is no per-row state to go
+    // stale. The roster is the one that used to be handed over once at mount.
+    const level1 = createLevel(1, 0x3039, ANIMAL_IDS)
+    const level2 = createLevel(2, 0x3039, ANIMAL_IDS)
+    const before = snapshotRows(mountFor(), snapshotFor({ state: level1 }))
+    const after = snapshotRows(mountFor(), snapshotFor({ state: level2 }))
+    expect(before['animals']).not.toBe(after['animals'])
+    expect(before['level']).toBe('1')
+    expect(after['level']).toBe('2')
   })
 
   it('truncates a long value so a row cannot push the overlay wider than the panel', () => {
     const long = 'x'.repeat(MAX_VALUE_LENGTH + 12)
-    expect(debugRowText('tier', long)).toBe(`${'x'.repeat(MAX_VALUE_LENGTH)}…`)
-    expect(debugRowText('tier', 'short')).toBe('short')
+    const state = { ...createLevel(1, 0x3039, ANIMAL_IDS), roster: [long] as unknown as LevelState['roster'] }
+    const rows = snapshotRows(mountFor(), snapshotFor({ state }))
+    expect(rows['animals']).toBe(`${'x'.repeat(MAX_VALUE_LENGTH)}…`)
   })
 
   it('leaves the trace row whole, because the trace is the point of issue #23', () => {
-    const longTrace = 'first tap\n'.repeat(20)
-    expect(debugRowText('boot', longTrace)).toBe(longTrace)
-    expect(rowText('boot', 'first pop')).toBe('first pop')
+    const longTrace = 'x'.repeat(MAX_VALUE_LENGTH * 2)
+    const current: BootRun = { startedAt: 0, steps: [{ name: longTrace, at: 1 }], lastError: null }
+    const rows = snapshotRows(mountFor({ bootLog: fakeBootLog(null, current) }), snapshotFor())
+    expect(rows['boot']).toContain(longTrace)
+    expect(rows['boot']).not.toContain('…')
   })
 
   it('carries the previous run before this one, which is the trace a force-close leaves (SPEC §14.3)', () => {
@@ -284,7 +279,7 @@ describe('debug rows', () => {
       lastError: null,
     }
 
-    const row = createRowModel({ bootLog: fakeBootLog(previous, current) }).text('boot')
+    const row = snapshotRows(mountFor({ bootLog: fakeBootLog(previous, current) }), snapshotFor())['boot'] ?? ''
     expect(row).toContain('standalone boot')
     expect(row).toContain('error Error: dead')
     expect(row).toContain('browser boot')
@@ -293,8 +288,9 @@ describe('debug rows', () => {
 
   it('shows this run alone when no trace survived a previous launch', () => {
     const current: BootRun = { startedAt: 0, steps: [{ name: 'boot', at: 1 }], lastError: null }
-    expect(createRowModel({ bootLog: fakeBootLog(null, current) }).text('boot')).toBe(traceLines(current).join('\n'))
-    expect(createRowModel({}).text('boot')).toBe('nothing recorded yet')
+    expect(snapshotRows(mountFor({ bootLog: fakeBootLog(null, current) }), snapshotFor())['boot']).toBe(
+      traceLines(current).join('\n'),
+    )
   })
 
   it('shows goals as what is still missing', () => {
@@ -304,6 +300,9 @@ describe('debug rows', () => {
     )
     expect(goalsText([])).toBe('none yet')
     expect(goalsText(undefined)).toBe('none yet')
+    // The row and the helper agree: the row is the helper applied to the level's goals.
+    const state = createLevel(1, 0x3039, ANIMAL_IDS)
+    expect(snapshotRows(mountFor(), snapshotFor({ state }))['goals']).toBe(goalsText(goalRowsFor(state)))
   })
 
   it('keeps the fps row its own, measured over a rolling window', () => {
@@ -381,35 +380,26 @@ describe('the rows the overlay declares (SPEC §14.3, issue #18)', () => {
     expect(DEBUG_ROWS.filter((row) => row.fixed).map((row) => row.key)).toEqual(['seed', 'display', 'motion'])
   })
 
-  it('has something to show for every row before the game reports it', () => {
-    // A row is painted from `initial`, so the overlay cannot open with a blank line. Every row has a word of
-    // its own for before anything is reported except the roster row, which only the game can know - so that
-    // row has to be one main.ts hands over at mount (issue #18).
-    const blankAtMount = DEBUG_ROWS.filter((row) => row.initial({}) === '').map((row) => row.key)
-    expect(blankAtMount).toEqual(['animals'])
-
-    const mounted = mountInfoKeys(mainSource).map(rowForMountKey).filter((key) => key !== 'onNextLevel')
-    for (const key of blankAtMount) expect(mounted).toContain(key)
-
-    // Every key main.ts hands the overlay at mount is a declared row, so the game cannot report a key the
-    // overlay would paint nothing for. `bubbles` and `bootLog` name rows by what they show.
-    for (const key of mounted) expect(isDebugRow(key)).toBe(true)
-    for (const key of ['level', 'seed', 'animals', 'rack', 'goals', 'boot']) expect(mounted).toContain(key)
+  it('has something to show for every row before the game reports anything', () => {
+    // The overlay paints from the snapshot at mount, so no row can open blank. The roster used to be the
+    // exception, which is why it was handed over at mount and could be the wrong level from level 2 on;
+    // now the snapshot carries the state, so every row has a value on the first paint (issue #18).
+    const rows = snapshotRows(mountFor(), snapshotFor())
+    for (const row of DEBUG_ROWS) expect(rows[row.key]).not.toBe('')
   })
 
-  it('catches a row that can never update', () => {
-    // The scan is the acceptance test, so it has to be able to fail: `showLevel()` reports level, rack,
-    // goals and the animals in play, `reportQueue` the queue, `reportLive` the balloons, particles and tier.
-    // Nothing may be handed over at mount and never reported again, because the roster changes with the
-    // level (SPEC §9.3), so a mount snapshot would be the wrong level's truth from level 2 on. Every row is
-    // reported after mount, so this expectation is closed - and the next test shows it can still fail.
-    expect(rowsThatCanNeverMove(mainSource)).toEqual([])
-  })
+  it('is not vacuous: a snapshot with no party says so rather than showing the last party', () => {
+    // The party rows read `live`, which is null while no party runs. A row that fell back to the last
+    // party's numbers would look live and be wrong, so null has its own words.
+    const idle = snapshotRows(mountFor(), snapshotFor({ live: null }))
+    expect(idle['balloons']).toBe('0')
+    expect(idle['particles']).toBe('0')
+    expect(idle['tier']).toBe('not running')
 
-  it('is not vacuous: a report removed from main.ts is caught', () => {
-    const quiet = mainSource.replace(/debug\.set\('queue', numberText\(session\.queueSize\(\)\)\)/, '')
-    expect(rowsThatCanNeverMove(quiet)).toContain('queue')
-    expect(rowsThatCanNeverMove(quiet)).not.toEqual([])
+    const running = snapshotRows(mountFor(), snapshotFor({ live: { balloons: 7, particles: 42, tier: '30' } }))
+    expect(running['balloons']).toBe('7')
+    expect(running['particles']).toBe('42')
+    expect(running['tier']).toBe('30')
   })
 
   it('reads at tablet distance, with its own pixel size rather than the small base the overlay inherits', () => {
@@ -506,18 +496,19 @@ describe('next level button', () => {
 
     // A level just dealt has earned nothing, so each goal row shows the ramp's whole target as still missing.
     const target = goalTargetForLevel(2)
-    const rows = saved.goals.map((goal) => ({ label: goal.animal, current: target - goal.remaining, needed: target }))
-    expect(rows.map((row) => row.current)).toEqual([0, 0])
+    const goalRows = saved.goals.map((goal) => ({ label: goal.animal, current: target - goal.remaining, needed: target }))
+    expect(goalRows.map((row) => row.current)).toEqual([0, 0])
 
-    // Read the rows through the model, because that is the path `mountDebugOverlay` paints from: the model
-    // formats each value as its row declares it, so the seed row shows the hex the save holds rather than the
-    // number, and the test cannot quietly measure a row against a helper the overlay does not use (issue #18).
-    const model = createRowModel({ level: saved.level, seed: saved.sessionSeed, bubbles: saved.bubbles, goals: rows })
-    expect(model.text('level')).toBe('2')
+    // Read the rows through the snapshot, because that is the path `mountDebugOverlay` paints from: the
+    // model formats each value as its row declares it, so the seed row shows the hex the save holds rather
+    // than the number, and the test cannot quietly measure a row against a helper the overlay does not use
+    // (issue #18).
+    const rows = snapshotRows(mountFor({ seed: advanced.sessionSeed }), snapshotFor({ state: advanced }))
+    expect(rows['level']).toBe('2')
     // SPEC §9.2: an advance deals a new level from the same per-install seed, so the seed row does not move.
-    expect(model.text('seed')).toBe('0x3039')
-    expect(model.text('rack')).toBe(String(bubblesForLevel(2)))
-    expect(model.text('goals')).toBe(`${saved.goals[0]?.animal} ${target} left, ${saved.goals[1]?.animal} ${target} left`)
+    expect(rows['seed']).toBe('0x3039')
+    expect(rows['rack']).toBe(String(bubblesForLevel(2)))
+    expect(rows['goals']).toBe(saved.goals.map((goal) => `${goal.animal} ${target} left`).join(', '))
   })
 
   it('advances through the same report path that wrote the save (main.ts wiring)', () => {
@@ -526,7 +517,7 @@ describe('next level button', () => {
     expect(mainSource).toContain('onNextLevel: nextLevel')
     // The report happens on the render's then, so the row is written from the state the save was written from.
     expect(functionBlock(mainSource, 'function nextLevel()')).toContain('.then(showLevel)')
-    expect(functionBlock(mainSource, 'function showLevel()')).toContain("debug.set('level'")
+    expect(functionBlock(mainSource, 'function showLevel()')).toContain('report()')
   })
 })
 
@@ -550,7 +541,8 @@ describe('off by default (SPEC §14.3, issue #18)', () => {
   it('mounts nothing without the flag, and the report calls cost nothing when it is off', () => {
     expect(mainSource).toMatch(/parseDebugFlag\([^)]*\)\s*\?\s*mountDebugOverlay/)
     expect(mainSource).toMatch(/const debug = [\s\S]{0,900}: null/)
-    expect(functionBlock(mainSource, 'function showLevel()')).toContain('if (debug === null) return')
+    // Every row is painted from one place, so the guard is in one place too.
+    expect(functionBlock(mainSource, 'function report()')).toContain('if (debug === null) return')
     // The frame sampling loop is the only thing the overlay keeps running, and it runs only for a mounted one.
     expect(mainSource).toMatch(/if \(debug !== null\) \{[^}]*measureFps/)
   })
@@ -562,9 +554,14 @@ describe('no network, no external tooling (SPEC §14.3)', () => {
     for (const banned of ['fetch(', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'import(', 'beacon(']) {
       expect(code).not.toContain(banned)
     }
-    // The only imports are app-internal: the overlay reads the boot trace and the media-query shape,
-    // and reaches nothing outside the app.
-    expect(uniqueMatches(debugSource, /from '([^']+)'/g)).toEqual(['./bootlog', './capabilities'])
+    // The only imports are app-internal: the overlay reads the boot trace, the media-query shape, the
+    // snapshot types and the layout it reports, and reaches nothing outside the app.
+    expect(uniqueMatches(debugSource, /from '([^']+)'/g)).toEqual([
+      '../game/types',
+      './layout',
+      './bootlog',
+      './capabilities',
+    ])
   })
 
   it('writes nothing, so a debug run cannot change the save it is reading', () => {

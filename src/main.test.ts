@@ -64,17 +64,17 @@ describe('the celebration hangs the bunch from the board the game has (issue #34
 
     // The layer reads these on every set and on every re-clamp, so the handler has to apply the new layout
     // before it tells the layer to resize: a turn mid-party moves the balloons to the board the game has now.
-    const resize = between(mainSource, "window.addEventListener('resize'", 'reportEnvironment()')
+    const resize = between(mainSource, "window.addEventListener('resize'", 'report()')
     expect(resize.indexOf('applyLayout(')).toBeLessThan(resize.indexOf('celebration.resize()'))
   })
 })
 
 describe('the row that claims pops gets the pops rather than the size of the set (issue #37)', () => {
   it('reports the counter the label claims, because the number it used to report refills as she pops', () => {
-    const report = between(mainSource, 'function reportLive(', '}')
+    const report = between(mainSource, 'function report(', 'function showLevel(')
     // `balloons popped` is a count of what she did, and a set that refills (issue #36) cannot show that: the
     // live size reads 12 -> 11 -> 12, and the row would be wrong from the first pop.
-    expect(report).toContain("debug.set('balloons', numberText(celebration.popCount()))")
+    expect(report).toContain('balloons: celebration.popCount()')
     expect(report).not.toContain('balloonCount()')
   })
 
@@ -84,11 +84,14 @@ describe('the row that claims pops gets the pops rather than the size of the set
     // nothing has been popped in this run yet.
     const party = between(mainSource, 'function showParty(', 'function nextLevel(')
     expect(party).toContain('celebration.start()')
+    // The party rows are only reported while the party is on screen, so the count cannot outlive the party it
+    // describes (the report's `live` is null while `party.hidden`).
+    expect(between(mainSource, 'function report(', 'function showLevel(')).toContain('party.hidden')
 
     // `nextLevel()` leaves the party before the next one is opened, so the row cannot read as the total of a
     // level she has moved on from - and the adult reset is a level change too, so it leaves the party the same
     // way (SPEC §14.2).
-    const next = between(mainSource, 'function nextLevel(', 'function persistProgress(')
+    const next = between(mainSource, 'function nextLevel(', 'function block(')
     expect(next).toContain('celebration.stop()')
     expect(between(mainSource, 'onReset:', 'void view')).toContain('celebration.stop()')
   })

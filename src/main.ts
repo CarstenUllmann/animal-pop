@@ -11,8 +11,8 @@ import { mountAdultReset, type Timer } from './ui/adultReset'
 import { createBootLog, describeError } from './ui/bootlog'
 import { createBoardView } from './ui/boardView'
 import { capabilityFlags, engineToken, hasMatchMedia, hasRandomValues } from './ui/capabilities'
-import { createCelebration, type CelebrationLayer } from './ui/celebration'
-import { animalsText, cellText, displayMode, goalsText, motionPreference, mountDebugOverlay, numberText, parseDebugFlag, viewportText, type DebugOverlay, type GoalRow } from './ui/debug'
+import { createCelebration } from './ui/celebration'
+import { displayMode, motionPreference, mountDebugOverlay, parseDebugFlag } from './ui/debug'
 import { renderFallback } from './ui/fallback'
 import { applyLayout, bunchMetricsFor, type Viewport } from './ui/layout'
 import { createMuteController, mountMuteToggle } from './ui/muteToggle'
@@ -169,21 +169,21 @@ function start(root: HTMLElement): void {
   // Feature-detected once: the environment rows are read from the same probe the reduced-motion rules use.
   const media = hasMatchMedia(window) ? window : null
 
-  // The only debugging channel we can rely on once installed (SPEC §14.3).
+  // The only debugging channel we can rely on once installed (SPEC §14.3). It is mounted with the run's
+  // first snapshot and re-reported from one place afterwards, because the rows are formatting decisions
+  // that belong with the overlay rather than ten calls scattered through this file (issue #18).
   const debug = parseDebugFlag(window.location.search)
-    ? mountDebugOverlay(document.body, {
-        level: session.state().level,
-        seed: sessionSeed,
-        display: displayMode(media, navigator.standalone),
-        motion: motionPreference(media),
-        viewport: viewportText(window.innerWidth, window.innerHeight),
-        cell: cellText(layout.cell),
-        animals: session.state().roster,
-        bubbles: session.state().bubbles,
-        goals: goalRows(),
-        bootLog: log,
-        onNextLevel: nextLevel,
-      })
+    ? mountDebugOverlay(
+        document.body,
+        {
+          seed: sessionSeed,
+          display: displayMode(media, navigator.standalone),
+          motion: motionPreference(media),
+          bootLog: log,
+          onNextLevel: nextLevel,
+        },
+        { state: session.state(), layout, queue: session.queueSize(), live: null },
+      )
     : null
   log.step(debug === null ? 'debug off' : 'debug overlay')
 
@@ -219,7 +219,7 @@ function start(root: HTMLElement): void {
       debug.measureFps(now)
       if (now - lastLive >= 250) {
         lastLive = now
-        reportLive(debug, celebration)
+        report()
       }
       window.requestAnimationFrame(sample)
     }
@@ -228,10 +228,11 @@ function start(root: HTMLElement): void {
 
   window.addEventListener('resize', () => {
     // Issue #19: a turn mid-level keeps the state, and the layout has to be playable straight away. The
-    // canvas is sized from the rect the party covers, so rotation also has to resize it.
+    // canvas is sized from the rect the party covers, so rotation also has to resize it. The overlay's
+    // cell and viewport rows read the layout, so the same report that the rest of the run uses updates them.
     layout = applyLayout(root, viewport(), { rows: GRID, cols: GRID })
     celebration.resize()
-    reportEnvironment()
+    report()
   })
 
   // The first frame is the deal, and the window the session opened at construction is what made a tap
@@ -259,7 +260,7 @@ function start(root: HTMLElement): void {
     // interactions. The session answers `blocked` and the tap goes no further (SPEC §7.5).
     const plan = session.beginTap(index)
     if (plan.firstTap) log.step('first tap')
-    reportQueue()
+    report()
     if (plan.result !== null) void runPlan(plan)
   }
 
@@ -325,43 +326,32 @@ function start(root: HTMLElement): void {
     }
   }
 
-  /** The overlay reads goals as what is still missing, which is the level's `remaining` (issue #18). */
-  function goalRows(): GoalRow[] {
-    return session.state().goals.map((goal) => ({
-      label: goal.animal,
-      current: goal.target - goal.remaining,
-      needed: goal.target,
-    }))
+  /**
+   * Every live row is painted from one value, so a row cannot lag the state it describes.
+   *
+   * The party rows are `null` while the party is not on screen, which is a different thing from a party
+   * that has popped nothing: the overlay says `not running` rather than `0 fps tier`. The trace and the
+   * fps row do not come from here - the log pushes and the overlay samples its own frames.
+   */
+  function report(): void {
+    if (debug === null) return
+    debug.report({
+      state: session.state(),
+      layout,
+      queue: session.queueSize(),
+      live: party.hidden
+        ? null
+        : {
+            balloons: celebration.popCount(),
+            particles: celebration.particleCount(),
+            tier: celebration.frameTier(),
+          },
+    })
   }
 
   function showLevel(): void {
     panel.render(session.state())
-    if (debug === null) return
-    debug.set('level', numberText(session.state().level))
-    debug.set('rack', numberText(session.state().bubbles))
-    debug.set('goals', goalsText(goalRows()))
-    // Issue #18: the roster is reported with the rest of the level, because the animals in play change
-    // with the level. Handed over once at mount, this row would keep showing level 1's roster.
-    debug.set('animals', animalsText(session.state().roster))
-    reportQueue()
-    reportLive(debug, celebration)
-  }
-
-  /** Issue #11: the queue row is the only way to see a tap still waiting, on a device with no console (SPEC §14.3). */
-  function reportQueue(): void {
-    if (debug === null) return
-    debug.set('queue', numberText(session.queueSize()))
-  }
-
-  /**
-   * The environment rows move when the tablet turns, so they are re-reported from the same place that
-   * re-applies the layout (issue #19). `display` and `motion` are fixed for the run: the modules they
-   * describe read them once at boot, so the row showing the boot value is the truthful one.
-   */
-  function reportEnvironment(): void {
-    if (debug === null) return
-    debug.set('viewport', viewportText(window.innerWidth, window.innerHeight))
-    debug.set('cell', cellText(layout.cell))
+    report()
   }
 
   /** SPEC §10.1: the party is the rack, and it is the only thing that plays the completion cue. */
@@ -383,15 +373,7 @@ function start(root: HTMLElement): void {
   }
 }
 
-/** The frame tier and the live counts only reach the overlay when the game reports them (issue #18). */
-function reportLive(debug: DebugOverlay, celebration: CelebrationLayer): void {
-  // Issue #37: `balloons popped` shows what she did rather than how many balloons are hanging, because the
-  // bunch refills as she pops (issue #36) and the two numbers come apart at the first pop. The row itself, its
-  // label and its place in the roster are issue #18's and are unchanged.
-  debug.set('balloons', numberText(celebration.popCount()))
-  debug.set('particles', numberText(celebration.particleCount()))
-  debug.set('tier', celebration.frameTier())
-}
+/** The frame tier and the live counts reach the overlay through the snapshot `report()` builds. */
 
 function block(className: string): HTMLElement {
   const element = document.createElement('div')
