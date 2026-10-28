@@ -1,3 +1,5 @@
+import { ADULT_RESET } from './constants'
+
 /**
  * Adult reset - issue #16.
  *
@@ -5,13 +7,10 @@
  * wipes progress back to level 1, and nothing a normal tap can do gets that far. Pure, so the hold,
  * the cancel and the timeout can be tested without a pointer or a clock - the same reason
  * `fallbackLines` is pure (issue #23).
+ *
+ * What the reset keeps is not decided here: the run owns the save, so `LevelSession.reset()` is the
+ * command that rebuilds level 1 and keeps the mute (SPEC §14.2, issue #17).
  */
-
-import { ADULT_RESET } from './constants'
-import { createLevel } from './level'
-import { DEFAULT_MUTED, resolveMuted } from './mute'
-import { toSaveState, type SaveContext } from './save'
-import type { AnimalId, SaveState } from './types'
 
 export type AdultResetStage = 'idle' | 'confirm'
 
@@ -60,24 +59,4 @@ export function confirmHasExpired(state: AdultResetState, now: number): boolean 
 /** The second tap only counts while the confirm step is still open. */
 export function confirmIsLive(state: AdultResetState, now: number): boolean {
   return state.stage === 'confirm' && !confirmHasExpired(state, now)
-}
-
-/**
- * What a completed reset keeps: the mute choice (§11) because it is an adult setting rather than
- * the child's progress, and the session seed (§9.2) because that is what makes the same animal set
- * come back. `levelsCompleted` is the progress, so the context the reset writes is the default run
- * with the remembered mute.
- */
-export function resetContext(previous: SaveState | null): SaveContext {
-  return { muted: resolveMuted(previous, DEFAULT_MUTED), levelsCompleted: 0 }
-}
-
-/**
- * The save a completed reset writes (SPEC §14.2, issue #16): level 1 with a full rack, which is
- * what `createLevel` produces for level 1, so the board, the goals and the rack are the ones a
- * fresh game starts with - not the ones that were wiped.
- */
-export function buildResetSave(previous: SaveState | null, pool: readonly AnimalId[]): SaveState {
-  const seed = previous === null ? 0 : previous.sessionSeed
-  return toSaveState(createLevel(1, seed, pool), resetContext(previous))
 }

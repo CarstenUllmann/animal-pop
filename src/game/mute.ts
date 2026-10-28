@@ -4,10 +4,12 @@
  * The rules are on their own here, with no audio device and no browser, so the default and the
  * remembered state can be tested - and because the game has to know the state before anything can
  * sound, the toggle restores it from the save rather than from last session's variables.
+ *
+ * There is no write here. The run owns the mute as part of its own save, so a toggle is one command on
+ * the session (`setMuted`), and the one write path is what remembers it (issue #17).
  */
 
-import { SAVE_KEY } from './save'
-import type { KeyValueStore, SaveState } from './types'
+import type { SaveState } from './types'
 
 /** SPEC §11: sound is on unless this device has been told otherwise. */
 export const DEFAULT_MUTED = false
@@ -24,19 +26,4 @@ export function resolveMuted(saved: SaveState | null, persistedDefault: boolean 
 
 export function toggleMuted(current: boolean): boolean {
   return !current
-}
-
-/**
- * The save a mute change writes: the new state merged into whatever the game last persisted, so
- * remembering the toggle never clobbers the level (§14.1). Nothing is written when there is no
- * save yet - the game's own next write carries `muted` from the save context.
- */
-export function persistMuted(saved: SaveState | null, muted: boolean, storage: KeyValueStore): boolean {
-  if (saved === null) return false
-  try {
-    return storage.write(SAVE_KEY, JSON.stringify(Object.assign({}, saved, { muted: muted })))
-  } catch (unused) {
-    // A WebView can refuse storage at any time; the toggle still works, it just is not remembered.
-    return false
-  }
 }

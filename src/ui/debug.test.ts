@@ -407,7 +407,7 @@ describe('the rows the overlay declares (SPEC §14.3, issue #18)', () => {
   })
 
   it('is not vacuous: a report removed from main.ts is caught', () => {
-    const quiet = mainSource.replace(/debug\.set\('queue', numberText\(queue\.size\(\)\)\)/, '')
+    const quiet = mainSource.replace(/debug\.set\('queue', numberText\(session\.queueSize\(\)\)\)/, '')
     expect(rowsThatCanNeverMove(quiet)).toContain('queue')
     expect(rowsThatCanNeverMove(quiet)).not.toEqual([])
   })
@@ -522,16 +522,10 @@ describe('next level button', () => {
 
   it('advances through the same report path that wrote the save (main.ts wiring)', () => {
     // The button is only enabled for a handler main.ts supplies, so a click can never call a level the
-    // child has not finished. The handler writes the save and then reports, so the rows cannot lag it.
+    // child has not finished. The run writes the save and this wiring reports it, so the rows cannot lag.
     expect(mainSource).toContain('onNextLevel: nextLevel')
-    const advance = functionBlock(mainSource, 'function nextLevel()')
-    expect(advance).toContain('state.level + 1')
-    // Every write goes through the one path that reads mute from the player, so a level transition
-    // cannot persist the mute state the game booted with (issue #17).
-    expect(advance).toContain('persistProgress()')
-    expect(functionBlock(mainSource, 'function persistProgress()')).toContain('writeSave(')
     // The report happens on the render's then, so the row is written from the state the save was written from.
-    expect(advance).toContain('.then(showLevel)')
+    expect(functionBlock(mainSource, 'function nextLevel()')).toContain('.then(showLevel)')
     expect(functionBlock(mainSource, 'function showLevel()')).toContain("debug.set('level'")
   })
 })

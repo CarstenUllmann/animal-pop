@@ -13,7 +13,6 @@
 
 import { ADULT_RESET } from '../game/constants'
 import {
-  buildResetSave,
   cancelReset,
   confirmIsLive,
   holdCompleted,
@@ -21,7 +20,6 @@ import {
   openConfirm,
   type AdultResetState,
 } from '../game/adultReset'
-import type { AnimalId, SaveState } from '../game/types'
 import type { Clock } from './bootlog'
 
 /** The whole message is one glyph, not a word, because she cannot read (SPEC §1). */
@@ -40,12 +38,8 @@ export interface Timer {
 export interface AdultResetDeps {
   clock: Clock
   timer: Timer
-  /** The pool the game plays with, so the fresh level 1 is a real level rather than a blank one. */
-  pool: readonly AnimalId[]
-  /** The save as the game currently holds it, which is what the reset keeps the seed and mute from. */
-  currentSave: () => SaveState | null
-  /** Called when the second tap completes the reset, with the save the game should now show (SPEC §14.2). */
-  onReset: (save: SaveState) => void
+  /** Called when the second tap completes the reset. The run decides what the reset keeps (SPEC §14.2). */
+  onReset: () => void
 }
 
 export interface AdultResetView {
@@ -142,9 +136,9 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
 
   const onIconClick = (): void => {
     if (!confirmIsLive(state, deps.clock.now())) return
-    const save = buildResetSave(deps.currentSave(), deps.pool)
     cancel()
-    deps.onReset(save)
+    // The run owns the save, so the reset is one command rather than a save this view rebuilds.
+    deps.onReset()
   }
 
   /**

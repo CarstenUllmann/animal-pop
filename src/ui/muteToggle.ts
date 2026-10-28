@@ -2,9 +2,9 @@
  * The mute toggle (SPEC §11, §14.1, issue #17).
  *
  * `createMuteController` is the half that can be tested without a browser: it decides what the
- * toggle shows at boot, what one tap changes, and what gets persisted. The player owns the audio
- * state, so the controller never keeps a second copy of it - that is what keeps the icon and the
- * sound from disagreeing (SPEC §11).
+ * toggle shows at boot and what one tap changes. The player owns the audio state, so the controller
+ * never keeps a second copy of it - that is what keeps the icon and the sound from disagreeing
+ * (SPEC §11). Remembering the choice is the run's job, through `onChange` (issue #17).
  *
  * The toggle is the only chrome on screen with no text (SPEC §1): a five-year-old cannot read, so
  * the state has to be carried by the icon alone, with `aria-pressed` as the accessible reading of
@@ -12,23 +12,22 @@
  */
 
 import type { AudioPlayer } from '../audio/player'
-import { DEFAULT_MUTED, persistMuted, resolveMuted, toggleMuted } from '../game/mute'
-import type { KeyValueStore, SaveState } from '../game/types'
+import { DEFAULT_MUTED, resolveMuted, toggleMuted } from '../game/mute'
+import type { SaveState } from '../game/types'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
 export interface MuteDeps {
   player: AudioPlayer
-  store: KeyValueStore
-  /** The save as the game currently holds it, so remembering mute never loses progress (§14.1). */
-  currentSave: () => SaveState | null
+  /** The save the run resumed from, which is what the toggle shows at boot (SPEC §11, issue #17). */
+  saved: SaveState | null
   /** SPEC §11: what a device that has never been told otherwise gets. */
   persistedDefault?: boolean
   /**
-   * Told when the switch moves, so the game's save context does not keep the state it booted with.
-   * Without this the next progress write would turn the sound back on (issue #17).
+   * Told when the switch moves. The run owns the mute, so this is what remembers it on the one write
+   * path - without it the next tap would put the state the game booted with back on disk (issue #17).
    */
-  onChange?: (muted: boolean) => void
+  onChange: (muted: boolean) => void
 }
 
 export interface MuteController {
@@ -39,7 +38,7 @@ export interface MuteController {
 
 export function createMuteController(deps: MuteDeps): MuteController {
   const fallback = deps.persistedDefault === undefined ? DEFAULT_MUTED : deps.persistedDefault
-  const restored = resolveMuted(deps.currentSave(), fallback)
+  const restored = resolveMuted(deps.saved, fallback)
 
   // Applied before anything can play (issue #17): the first pop already respects the remembered
   // state, and a device with no save gets the default.
@@ -54,8 +53,7 @@ export function createMuteController(deps: MuteDeps): MuteController {
       // Tell the player first. A running celebration is silenced by the same switch, and a
       // storage failure must never leave the icon disagreeing with what she can hear.
       deps.player.setMuted(next)
-      if (deps.onChange !== undefined) deps.onChange(next)
-      persistMuted(deps.currentSave(), next, deps.store)
+      deps.onChange(next)
 
       return next
     },

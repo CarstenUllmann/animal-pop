@@ -2,12 +2,11 @@ import './style.css'
 import { createSynthPlayer } from './audio/synth'
 import { ANIMAL_POOL } from './game/animals'
 import { GRID } from './game/constants'
-import { createLevel, resumeLevel } from './game/level'
 import { createRng, seedFromCrypto, seedFromRandom } from './game/rng'
-import { partySize, resolveTap, shouldShowParty } from './game/rules'
-import { readSave, toSaveState, writeSave, type SaveContext } from './game/save'
-import { createTapQueue } from './game/tapQueue'
-import type { PopResult, SaveState, TapResult } from './game/types'
+import { partySize } from './game/rules'
+import { readSave, writeSave } from './game/save'
+import { createLevelSession, type TapPlan } from './game/session'
+import type { PopResult, TapResult } from './game/types'
 import { mountAdultReset, type Timer } from './ui/adultReset'
 import { createBootLog, describeError } from './ui/bootlog'
 import { createBoardView } from './ui/boardView'
@@ -96,12 +95,19 @@ function start(root: HTMLElement): void {
   const sessionSeed = saved === null ? randomSeed() : saved.sessionSeed
   const rng = createRng(sessionSeed)
 
-  let state = saved === null ? createLevel(1, sessionSeed, pool) : resumeLevel(saved, pool)
-  const context: SaveContext = {
-    muted: saved === null ? false : saved.muted,
-    levelsCompleted: saved === null ? 0 : saved.levelsCompleted,
-  }
-  log.step(saved === null ? `level ${state.level}` : `resumed level ${state.level}`)
+  // The run is one module now: the level, the mute, the completion count, the tap queue and the party
+  // flag live in `game/session.ts`, and this file only renders what it decides. The write is the one
+  // side effect, and it is the same codec every path uses (SPEC §14.1, issue #17).
+  const session = createLevelSession({
+    saved,
+    sessionSeed,
+    pool,
+    rng,
+    save: (state, context) => {
+      writeSave(state, context, store)
+    },
+  })
+  log.step(saved === null ? `level ${session.state().level}` : `resumed level ${session.state().level}`)
 
   // SPEC §10: the party is an overlay over the board, not a band below it, so the board stays visible
   // under the dim. The celebration module measures the rect its root element covers, which is why the
@@ -119,30 +125,21 @@ function start(root: HTMLElement): void {
     onTap: enqueueTap,
     // SPEC §8.1: the view needs the goals so it can mark a goal animal that is in a legal group; the
     // core has already decided, so this only reports (issue #48).
-    goals: () => state.goals,
+    goals: () => session.state().goals,
   })
   boardArea.append(view.element)
   log.step('view')
 
   const player = createSynthPlayer()
-  let lastSave = saved
 
+  // Issue #17: the run owns the mute, so the toggle is one command on the session rather than a save
+  // the toggle writes beside the game. The controller still restores from the save, because the game
+  // has to know the state before anything can sound (SPEC §11).
   const mute = createMuteController({
     player,
-    store,
-    currentSave: () => lastSave,
-    // Issue #17: the game persists the toggle on the next save, so the save context and the last save
-    // have to move with the switch. Without this, the next tap wrote the muted state the game booted
-    // with and quietly turned the sound back on after a reload.
-    onChange: (muted: boolean) => {
-      context.muted = muted
-      if (lastSave !== null) lastSave = Object.assign({}, lastSave, { muted: muted })
-    },
+    saved,
+    onChange: (muted: boolean) => session.setMuted(muted),
   })
-  context.muted = mute.muted()
-  // A save exists from the first frame, not just after the first tap: otherwise a mute chosen before
-  // she plays has nothing to merge into and is forgotten on reload (issue #17).
-  lastSave = toSaveState(state, context)
   mountMuteToggle(panel.element, mute)
   log.step('mute')
 
@@ -151,20 +148,13 @@ function start(root: HTMLElement): void {
   mountAdultReset(panel.levelElement, {
     clock: { now: () => Date.now() },
     timer: timer(),
-    pool,
-    currentSave: () => lastSave,
-    onReset: (resetSave: SaveState) => {
-      lastSave = resetSave
-      state = resumeLevel(resetSave, pool)
-      context.levelsCompleted = 0
-      // Issue #16: a reset is only a reset once it is written, otherwise the next force-close brings the
-      // wiped level straight back. Issue #11: the reset is a level change, so anything still queued goes
-      // with it, and the board is dealt again rather than left as the wiped one was.
-      persistProgress()
-      queue.clear()
-      partyShown = false
+    onReset: () => {
+      // Issue #16: a reset is only a reset once it is written, which `session.reset()` does. Issue #11:
+      // the reset is a level change, so anything still queued goes with it, and the board is dealt
+      // again rather than left as the wiped one was.
       celebration.stop()
       party.hidden = true
+      const state = session.reset()
       log.step(`adult reset → level ${state.level}`)
       void view
         .renderInitial(state.board)
@@ -182,14 +172,14 @@ function start(root: HTMLElement): void {
   // The only debugging channel we can rely on once installed (SPEC §14.3).
   const debug = parseDebugFlag(window.location.search)
     ? mountDebugOverlay(document.body, {
-        level: state.level,
+        level: session.state().level,
         seed: sessionSeed,
         display: displayMode(media, navigator.standalone),
         motion: motionPreference(media),
         viewport: viewportText(window.innerWidth, window.innerHeight),
         cell: cellText(layout.cell),
-        animals: state.roster,
-        bubbles: state.bubbles,
+        animals: session.state().roster,
+        bubbles: session.state().bubbles,
         goals: goalRows(),
         bootLog: log,
         onNextLevel: nextLevel,
@@ -207,8 +197,8 @@ function start(root: HTMLElement): void {
   window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => showError(describeError(event.reason)))
 
   const celebration = createCelebration(party, player, rng, {
-    tier: () => partySize(state).tier,
-    balloons: () => partySize(state).balloons,
+    tier: () => partySize(session.state()).tier,
+    balloons: () => partySize(session.state()).balloons,
     onFirstBalloon: () => log.step('first balloon'),
     onPlayReady: () => log.step('play arrow'),
     onPlay: nextLevel,
@@ -244,30 +234,19 @@ function start(root: HTMLElement): void {
     reportEnvironment()
   })
 
-  // Issue #11 (SPEC §7.5): the queue is the pure module in `game/tapQueue.ts`, so what it decides is
-  // testable without a screen. Here it is only wired: the game hands it taps, opens the window a settle
-  // occupies, and runs whatever the queue says may run.
-  const queue = createTapQueue()
-  let firstTap = true
-  let firstPop = true
-  // Issue #14: the completion cue fires once per completion. Goals stay at zero after the win, so a
-  // tap on a completed level must not fanfare again.
-  let partyShown = false
-
-  // The window is open for the deal, so taps during it wait rather than run against a board that is
-  // still appearing.
-  queue.openWindow()
+  // The first frame is the deal, and the window the session opened at construction is what made a tap
+  // during it wait rather than run against a board that is still appearing.
   void view
-    .renderInitial(state.board)
+    .renderInitial(session.state().board)
     .then(() => {
-      queue.closeWindow()
       log.step('first frame')
       showLevel()
       // SPEC §14.1: a level resumes exactly as it was left. A save written after the goals hit zero is a
       // party she has not tapped the play arrow on yet, so the party opens again rather than leaving a
       // finished board with no party and no arrow. The run that completed the level already counted it.
-      if (shouldShowParty(state, partyShown)) showParty(false)
-      drainQueue()
+      if (session.restoreParty()) showParty()
+      const next = session.settle()
+      if (next !== null) void runPlan(next)
     })
     .catch((error: unknown) => {
       showError(describeError(error))
@@ -276,34 +255,23 @@ function start(root: HTMLElement): void {
 
   function enqueueTap(index: number): void {
     player.unlock()
-    if (firstTap) {
-      firstTap = false
-      log.step('first tap')
-    }
     // SPEC §10: the board is inert while the party is showing, apart from the celebration's own
-    // interactions. A tap during the party is not a tap on the level, so it does not reach the queue.
-    if (partyShown) return
-
-    // Issue #11: the queue decides what a tap becomes - it runs, it waits behind the taps that arrived
-    // before it, or it is discarded quietly past the cap. Only 'run' is a tap the game acts on, and a
-    // dropped one is remembered nowhere, so there is nothing here that could charge her for it.
-    const arrival = queue.register(index)
+    // interactions. The session answers `blocked` and the tap goes no further (SPEC §7.5).
+    const plan = session.beginTap(index)
+    if (plan.firstTap) log.step('first tap')
     reportQueue()
-    if (arrival === 'run') void resolveTapAndShow(index)
+    if (plan.result !== null) void runPlan(plan)
   }
 
-  async function resolveTapAndShow(index: number): Promise<void> {
-    // Issue #11: this is the window the queue blocks taps for. The queue owns no clock, so the block ends
-    // exactly here, when the settle this tap produced has finished animating.
-    queue.openWindow()
-    try {
-      const result = resolveTap(state, index, rng)
+  /** Render one settle the session already decided and wrote. */
+  async function runPlan(plan: TapPlan): Promise<void> {
+    const result = plan.result
+    if (result === null) return
 
+    try {
       // Issue #8: the panel is rendered before the pop is animated, so the bubble that pays for this
       // tap sparkles in the same frame as the pop, and the screen cannot show a state the save has
       // already left behind.
-      state = result.state
-      persistProgress()
       showLevel()
 
       if (result.group !== null) {
@@ -318,27 +286,23 @@ function start(root: HTMLElement): void {
           await view.animateReshuffle(result.reshuffled)
         }
       } else {
-        view.animateInvalid(index)
+        view.animateInvalid(plan.index)
         player.playInvalid()
       }
 
       // If the crash happens on the first interaction, the trace shows how far we got.
-      if (firstPop && result.outcome === 'popped') {
-        firstPop = false
-        log.step('first pop')
-      }
+      if (plan.firstPop) log.step('first pop')
 
       // SPEC §8.1: both goals at zero is the win, and the party is what is left on the rack.
-      if (shouldShowParty(state, partyShown)) showParty()
+      if (plan.party) showParty()
     } catch (error) {
       log.error(describeError(error))
     } finally {
-      queue.closeWindow()
+      // The settle is over, so the queue may release the next tap. It is resolved against the board the
+      // settle made - not the one she tapped on (SPEC §7.5).
+      const next = session.settle()
+      if (next !== null) void runPlan(next)
     }
-
-    // The index that runs now is resolved against `state`, which is the board the settle made - not the
-    // one she tapped on (SPEC §7.5).
-    drainQueue()
   }
 
   function playTap(result: TapResult): void {
@@ -363,7 +327,7 @@ function start(root: HTMLElement): void {
 
   /** The overlay reads goals as what is still missing, which is the level's `remaining` (issue #18). */
   function goalRows(): GoalRow[] {
-    return state.goals.map((goal) => ({
+    return session.state().goals.map((goal) => ({
       label: goal.animal,
       current: goal.target - goal.remaining,
       needed: goal.target,
@@ -371,14 +335,14 @@ function start(root: HTMLElement): void {
   }
 
   function showLevel(): void {
-    panel.render(state)
+    panel.render(session.state())
     if (debug === null) return
-    debug.set('level', numberText(state.level))
-    debug.set('rack', numberText(state.bubbles))
+    debug.set('level', numberText(session.state().level))
+    debug.set('rack', numberText(session.state().bubbles))
     debug.set('goals', goalsText(goalRows()))
     // Issue #18: the roster is reported with the rest of the level, because the animals in play change
     // with the level. Handed over once at mount, this row would keep showing level 1's roster.
-    debug.set('animals', animalsText(state.roster))
+    debug.set('animals', animalsText(session.state().roster))
     reportQueue()
     reportLive(debug, celebration)
   }
@@ -386,7 +350,7 @@ function start(root: HTMLElement): void {
   /** Issue #11: the queue row is the only way to see a tap still waiting, on a device with no console (SPEC §14.3). */
   function reportQueue(): void {
     if (debug === null) return
-    debug.set('queue', numberText(queue.size()))
+    debug.set('queue', numberText(session.queueSize()))
   }
 
   /**
@@ -400,56 +364,22 @@ function start(root: HTMLElement): void {
     debug.set('cell', cellText(layout.cell))
   }
 
-  /**
-   * SPEC §10.1: the party is the rack, and it is the only thing that plays the completion cue.
-   * `countCompletion` is false when this is the launch restoring a party rather than the tap that earned
-   * it: the level was already counted by the run that reached it (SPEC §14.1, issue #15).
-   */
-  function showParty(countCompletion = true): void {
-    partyShown = true
-    // Issue #11, SPEC §10: a tap that arrived during the settle that won belongs to the level just
-    // finished. Draining it after this point would pop a group behind the party's dim and spend a bubble
-    // after the balloons were sized, so it goes with the level rather than into it.
-    queue.clear()
-    // Internal only, never shown to her (SPEC §14.1).
-    if (countCompletion) context.levelsCompleted += 1
-    persistProgress()
-    log.step(`party ${partySize(state).tier}`)
+  /** SPEC §10.1: the party is the rack, and it is the only thing that plays the completion cue. */
+  function showParty(): void {
+    log.step(`party ${partySize(session.state()).tier}`)
     party.hidden = false
     celebration.start()
   }
 
   function nextLevel(): void {
-    partyShown = false
     celebration.stop()
     party.hidden = true
-    // Issue #11: a level change clears the queue, because the taps waiting belong to the level she has
-    // left, and the board they would have been decided against is not the one the new level was dealt.
-    queue.clear()
-    state = createLevel(state.level + 1, sessionSeed, pool)
-    persistProgress()
+    const state = session.nextLevel()
     log.step(`level ${state.level}`)
     void view
       .renderInitial(state.board)
       .then(showLevel)
       .catch((error: unknown) => log.error(describeError(error)))
-  }
-
-  /**
-   * The one write path for progress (SPEC §14.1). It reads mute from the player rather than from the
-   * context captured at boot, so toggling the sound and then playing a tap cannot write the old state
-   * back over the remembered one (issue #17).
-   */
-  function persistProgress(): void {
-    context.muted = mute.muted()
-    lastSave = toSaveState(state, context)
-    writeSave(state, context, store)
-  }
-
-  function drainQueue(): void {
-    // Nothing may run while the window is open, so this is the moment the queue releases the oldest tap.
-    const next = queue.drain()
-    if (next !== null) void resolveTapAndShow(next)
   }
 }
 

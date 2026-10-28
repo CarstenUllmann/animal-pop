@@ -54,40 +54,6 @@ describe('the board on screen matches the board in the state (SPEC §7.4, issue 
   })
 })
 
-describe('a party restored after a force-close (SPEC §14.1, issue #15)', () => {
-  const firstFrame = between(mainSource, "log.step('first frame')", '.catch(')
-
-  it('opens the party when the resumed save is already complete', () => {
-    // A save written after the goals hit zero is a party she has not tapped ▶ on yet. Reopening it used to
-    // show the finished board with the party hidden and no arrow: a screen with no way forward.
-    expect(firstFrame).toContain('shouldShowParty(state, partyShown)')
-    expect(firstFrame).toContain('showParty(false)')
-    expect(firstFrame.indexOf('showLevel()')).toBeLessThan(firstFrame.indexOf('showParty(false)'))
-    expect(firstFrame.indexOf('showParty(false)')).toBeLessThan(firstFrame.indexOf('drainQueue()'))
-  })
-
-  it('counts the completion once, when the tap earns it rather than when the launch restores it', () => {
-    const party = between(mainSource, 'function showParty(', 'function nextLevel(')
-    expect(party).toContain('if (countCompletion)')
-    expect(party).toContain('context.levelsCompleted += 1')
-    // The tap path uses the rule without the override, so it counts.
-    const tapPath = between(mainSource, '// SPEC §8.1: both goals at zero', '} catch (error)')
-    expect(tapPath).toContain('showParty()')
-  })
-
-  it('drops a tap still queued from the settle that won, rather than popping behind the party', () => {
-    // SPEC §7.5 keeps a tap that arrives during an animation, but §10 makes the board inert once the
-    // party is up. A queued tap that ran afterwards would change the saved rack after the balloons were
-    // sized from it, and pop a tile she can only see through the dim.
-    expect(between(mainSource, 'function showParty(', 'function nextLevel(')).toContain('queue.clear()')
-  })
-
-  it('reads the same rule on both paths, so they cannot drift apart', () => {
-    const calls = mainSource.match(/shouldShowParty\(state, partyShown\)/g) ?? []
-    expect(calls).toHaveLength(2)
-  })
-})
-
 describe('the celebration hangs the bunch from the board the game has (issue #34)', () => {
   it('is handed the board `ui/layout.ts` derives, read as functions so a rotation gives the new one', () => {
     // The end markers are text beyond the wiring rather than a closing brace: the option values are arrow
