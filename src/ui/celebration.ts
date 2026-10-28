@@ -9,6 +9,7 @@ import {
 } from '../game/constants'
 import type { AudioPlayer } from '../audio/player'
 import type { PartyTier, Rng } from '../game/types'
+import { pickBalloonColour } from './balloonColours'
 import { bunchFactor, clampToBoard, placeBunch, placeSlot, type BunchMetrics, type Place } from './bunch'
 import { hasMatchMedia } from './capabilities'
 import { createFrameTierMeter, type FrameTier } from './frameTier'
@@ -90,6 +91,9 @@ interface Balloon {
   /** The place this balloon is hung at, in the board the rule was read against (issue #34). A rotation
    *  re-clamps this rather than drawing a new one, so the bunch she sees is the bunch the rule answered. */
   place: Place
+  /** The colour this balloon was given at spawn (SPEC §10.1, issue #49). A refill reads the colours of
+   *  the balloons already hanging so overlapping bodies differ; an existing balloon is never recoloured. */
+  colour: string
 }
 
 export interface CelebrationOptions {
@@ -368,7 +372,7 @@ export function createCelebration(
    *  slot a pop leaves later is refilled without that delay, so the blob never pauses (issue #36). */
   function hangBunch(): void {
     const places = placeBunch(opts.metrics(), rng, partySize())
-    for (let i = 0; i < places.length; i++) spawnBalloon(places[i] as Place, i, i * CELEBRATION.balloonStaggerMs)
+    for (let i = 0; i < places.length; i++) spawnBalloon(places[i] as Place, i * CELEBRATION.balloonStaggerMs)
 
     // The debug step records the moment the party first shows a balloon (issue #18). A spawn makes no sound,
     // because sound belongs to the pop only (issue #36), so this is reported here rather than in a chime
@@ -424,7 +428,7 @@ export function createCelebration(
       if (place === null) return
 
       // No stagger delay, so this climb overlaps the collapse the slot came from: the blob never pauses.
-      spawnBalloon(place, balloons.length, 0)
+      spawnBalloon(place, 0)
     }
 
     // Reduced motion makes the collapse a single frame in the stylesheet, so there is no travel to wait for:
@@ -436,7 +440,7 @@ export function createCelebration(
     later(CELEBRATION.balloonCollapseMs, exit)
   }
 
-  function spawnBalloon(place: Place, index: number, delayMs: number): void {
+  function spawnBalloon(place: Place, delayMs: number): void {
     const el = document.createElement('button')
     el.type = 'button'
     el.className = 'balloon'
@@ -453,14 +457,12 @@ export function createCelebration(
     float.append(shape)
     el.append(float)
 
-    // `fill: currentColor` in the stylesheet needs a colour to inherit (SPEC §10.1).
-    const colour = BALLOON_COLORS[index % BALLOON_COLORS.length]
-    el.style.color = colour === undefined ? '#ff8fab' : colour
+    // `fill: currentColor` in the stylesheet needs a colour to inherit (SPEC §10.1). The newcomer is
+    // coloured against the balloons already hanging, so overlapping bodies differ (issue #49).
+    const colour = pickBalloonColour(place, balloons, BALLOON_COLORS, rng)
+    el.style.color = colour
     // SPEC §10.1: staggered entry, so balloons do not arrive as one flat wall. The delay is the caller's:
-    // `hangBunch` staggers the set that arrives together, a refilled slot rises at once (issue #36). The
-    // index is the order the rule answered in, which is also the paint order: biggest first, so the small
-    // balloons are hung in front of the big ones (issue #33). A refill is appended last, so it paints in
-    // front of the bunch it joined - that is the one thing the rule's order cannot decide after a pop.
+    // `hangBunch` staggers the set that arrives together, a refilled slot rises at once (issue #36).
     el.style.animationDelay = `${delayMs}ms`
     // Issue #34: the position is the place the rule answered, written as px against the board's origin
     // inside the overlay. The percent band and the wider-than-the-board spread this module used to compute
@@ -475,9 +477,12 @@ export function createCelebration(
     float.style.animationDelay = `${(-rng.next() * period) / 1000}s`
     float.style.animationDirection = rng.next() < 0.5 ? 'reverse' : 'normal'
 
+    // The append order is the paint order: the opening bunch is biggest first, so the small balloons are
+    // hung in front of the big ones. A refill is appended last, so it paints in front of the bunch it
+    // joined - that is the one thing the rule's order cannot decide after a pop (issue #33).
     root.appendChild(el)
 
-    const balloon: Balloon = { el, popped: false, place }
+    const balloon: Balloon = { el, popped: false, place, colour }
     balloons.push(balloon)
 
     el.addEventListener('click', () => {

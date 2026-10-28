@@ -92,9 +92,12 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
 
   it('gives every balloon a colour, because the stylesheet fills it with currentColor', () => {
     // The SVG body is `fill: currentColor`; nothing set the inherited colour, so the party was a row of
-    // white ovals rather than balloons (SPEC §10.1).
+    // white ovals rather than balloons (SPEC §10.1). The colour is drawn against the balloons already
+    // hanging rather than from the spawn index, so overlapping bodies differ (issue #49).
     expect(source).toContain('el.style.color')
     expect(source).toContain('BALLOON_COLORS')
+    expect(source).toContain('pickBalloonColour(place, balloons, BALLOON_COLORS, rng)')
+    expect(source).not.toContain('index % BALLOON_COLORS.length')
   })
 
   it('builds the three-element balloon, one transform owner each (issues #25, #26)', () => {
@@ -157,7 +160,7 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
     // No delay beyond the rise. The set that arrives together is still staggered, a refilled slot is not, so
     // the 1200ms climb overlaps the 180ms collapse the slot came from and the blob never pauses.
     expect(hang).toContain('i * CELEBRATION.balloonStaggerMs')
-    expect(pop).toContain('spawnBalloon(place, balloons.length, 0)')
+    expect(pop).toContain('spawnBalloon(place, 0)')
     expect(spawn).toContain('el.style.animationDelay = `${delayMs}ms`')
 
     // Sound belongs to the pop only, so the pop's pitch is the index in the set as it is now, and the entry

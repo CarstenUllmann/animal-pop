@@ -4,8 +4,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { AudioPlayer } from '../audio/player'
-import { CELEBRATION } from '../game/constants'
+import { BALLOON_COLORS, CELEBRATION, LAYOUT } from '../game/constants'
 import { createRng } from '../game/rng'
+import type { Place } from './bunch'
 import { createCelebration, type CelebrationLayer } from './celebration'
 import { bunchMetricsFor } from './layout'
 
@@ -100,6 +101,33 @@ function asElement(value: HTMLElement | undefined): HTMLElement {
 /** The place a balloon is hung at, as the module wrote it into the element. */
 function positionOf(el: HTMLElement): string {
   return `${el.style.left}/${el.style.bottom}`
+}
+
+/** The board origin the mount passes into the layer, so a written px position can be read back as a place. */
+const ORIGIN = { x: 89, y: 30 }
+
+/** Read the place back out of the px and jitter the module wrote. The DOM rounds px, so this is approximate. */
+function placeOf(el: HTMLElement): Place {
+  const size = Number(el.style.getPropertyValue('--balloon-jitter')) * BOARD.balloonPx
+  return {
+    x: Number.parseFloat(el.style.left) + size / 2 - ORIGIN.x,
+    y: Number.parseFloat(el.style.bottom) + (size * LAYOUT.balloonHeightRatio) / 2 - ORIGIN.y,
+    size,
+  }
+}
+
+/** jsdom normalises a hex colour to `rgb(...)`, so the palette is normalised the same way. */
+function paletteColours(): string[] {
+  const probe = document.createElement('span')
+  return BALLOON_COLORS.map((colour) => {
+    probe.style.color = colour
+    return probe.style.color
+  })
+}
+
+/** Both places were written to the DOM in whole px, so leave two pixels of slack before calling it an overlap. */
+function definitelyOverlaps(a: Place, b: Place): boolean {
+  return Math.hypot(a.x - b.x, a.y - b.y) + 2 < (a.size + b.size) / 2
 }
 
 describe('a popped balloon collapses to nothing and leaves the layer (issue #35)', () => {
@@ -301,6 +329,66 @@ describe('the bunch replaces itself as she pops, so it never empties (issue #36)
     expect(balloonsIn(root)).toHaveLength(cap)
     expect(balloonsIn(root).some((el) => el.classList.contains('balloon--popped'))).toBe(false)
     expect(layer.balloonCount()).toBe(cap)
+  })
+})
+
+describe('the bunch colours overlapping balloons apart (issue #49)', () => {
+  it('gives every balloon a palette colour and never repeats one across an overlap', () => {
+    const { layer, root } = mount(12)
+    layer.start()
+
+    const hung = balloonsIn(root)
+    const places = hung.map(placeOf)
+    const palette = paletteColours()
+    for (const el of hung) expect(palette).toContain(el.style.color)
+
+    let overlaps = 0
+    for (let i = 0; i < hung.length; i++) {
+      for (let j = i + 1; j < hung.length; j++) {
+        if (!definitelyOverlaps(places[i] as Place, places[j] as Place)) continue
+        overlaps++
+        expect(asElement(hung[j]).style.color).not.toBe(asElement(hung[i]).style.color)
+      }
+    }
+    // Otherwise the test would pass by hanging a bunch with nothing overlapping in it.
+    expect(overlaps).toBeGreaterThan(0)
+  })
+
+  it('colours a refill against the bunch it joins, and leaves the survivors alone', async () => {
+    const { layer, root } = mount(12)
+    layer.start()
+
+    const before = balloonsIn(root)
+    const beforePlaces = before.map(placeOf)
+    const popped = asElement(before[0])
+    popped.click()
+    await wait(CELEBRATION.balloonCollapseMs + 150)
+
+    const after = balloonsIn(root)
+    expect(after).toHaveLength(before.length)
+    expect(after.some((el) => el === popped)).toBe(false)
+
+    // Every balloon that was already hanging is still the same element with the same colour: a refill
+    // never recolours the bunch it joins.
+    for (let i = 1; i < before.length; i++) {
+      const survivor = asElement(after[i - 1])
+      expect(survivor).toBe(before[i])
+      expect(survivor.style.color).toBe(asElement(before[i]).style.color)
+    }
+
+    const refill = asElement(after[after.length - 1])
+    expect(paletteColours()).toContain(refill.style.color)
+
+    // The refill's place is written to the DOM in whole px, so `definitelyOverlaps` keeps a pair that only
+    // looks like an overlap after rounding out of the assertion.
+    const refillPlace = placeOf(refill)
+    let overlaps = 0
+    for (let i = 1; i < before.length; i++) {
+      if (!definitelyOverlaps(refillPlace, beforePlaces[i] as Place)) continue
+      overlaps++
+      expect(refill.style.color).not.toBe(asElement(before[i]).style.color)
+    }
+    expect(overlaps).toBeGreaterThan(0)
   })
 })
 
