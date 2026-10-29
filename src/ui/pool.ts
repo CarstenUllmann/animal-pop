@@ -1,5 +1,5 @@
 /**
- * Fixed-capacity object pool (SPEC §5). Particles are reused from an array of prefilled
+ * Fixed-capacity object pool (SPEC §10.2). Particles are reused from an array of prefilled
  * objects; nothing is allocated inside the draw loop, so a fireworks burst cannot make the
  * old WebView stutter. `acquire` returns null once the pool is exhausted rather than
  * growing it, which is what keeps the 500-object cap real.

@@ -354,7 +354,7 @@ body {
 }
 
 /* One transform owner per element (issue #25): the button owns the rise, this span owns the endless
-   sway/bob, and `.balloon__shape` owns the 260ms pop. Chrome 61 has no individual transform
+   sway/bob, and `.balloon__shape` owns the pop (`--balloon-collapse-ms`, 180ms). Chrome 61 has no individual transform
    properties, so the sway and the bob share one keyframe set: one sway cycle, two bob cycles. The six
    and a half seconds is the midpoint of `CELEBRATION.balloonFloatMsMin`/`Max`, emitted as a token. */
 .balloon__float {

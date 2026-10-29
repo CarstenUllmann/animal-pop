@@ -6,18 +6,11 @@ export const RESHUFFLE_MIN_GROUP = 3
 /** Input queue depth: a tap arriving while the board is still settling is kept, not dropped. */
 export const MAX_QUEUED_TAPS = 2
 
-/** SPEC §3: the tap queue the child plays from — three cells, popped cell returns to the tail. */
-export const QUEUE_DEPTH = 3
-
 /** The party never reaches zero, so there is no fail state (SPEC §8.3). */
 export const MIN_BUBBLES = 1
 
 /** Celebration size is capped, whatever the rack holds (SPEC §8.4). */
 export const MAX_BALLOONS = 12
-
-/** The goal card shows up to three animals (SPEC §3, §10); level 30 is the maximum goal count (SPEC §1). */
-export const MAX_GOAL_SLOTS = 3
-export const MAX_GOAL_COUNT = 30
 
 /** Difficulty stops rising here; only the roster and goals rotate afterwards (SPEC §9.3). */
 export const PLATEAU_LEVEL = 16
@@ -132,7 +125,12 @@ export const LAYOUT = {
    * asks for: 6 rows x 90 = 540 of the target device's 600.
    */
   landscapeBoardFraction: 0.90,
-  /** Cell bounds; the cell is sized from the board area within them. */
+  /**
+   * Cell bounds. The floor is below §13's 64 CSS px interactive floor on purpose: it is the
+   * smallest-board fallback for a viewport smaller than the spec assumes, where the root reports
+   * `data-tap-target="too-small"` instead of clipping the board further. The target device never
+   * takes this path (its cell is 90).
+   */
   cellMinPx: 60,
   cellMaxPx: 128,
   /* Portrait puts the panel above the board, so the board gives most of that share back (SPEC §13).
@@ -195,7 +193,7 @@ export const LAYOUT = {
    *  `--balloon-band`: on the target tablet 50% up the overlay is a place the rule takes, which is the
    *  difference between a percent of the overlay and a place in the board. */
   balloonBandBottomMin: 50,
-  /** Device pixel ratio cap (SPEC §5). */
+  /** Device pixel ratio cap (SPEC §10.2). */
   dprMax: 2,
 } as const
 
@@ -424,7 +422,7 @@ export const SIM = {
    * measures just below the band's floor (46-54%) and holds the medium tier. The tier is what the game
    * reads, so it is asserted at every level: never below medium, big through `bigThrough`.
    */
-  greedyBand: { min: PARTY_TIERS.medium, max: 0.65, numericFrom: 7, numericTo: 12, bigThrough: 12 },
+  greedyBand: { min: 0.5, max: 0.65, numericFrom: 7, numericTo: 12, bigThrough: 12 },
 
   /** §16.2: `random` sits within 2-3 balloons of the floor from level 11, measured at p10. The band is an
    *  upper bound on how near the floor she plausibly gets, and p10 cannot go below the floor, so the lower
