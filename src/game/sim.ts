@@ -15,7 +15,7 @@ import type { AnimalId, Group, LevelState, PartyTier, Rng } from './types'
  * `tapIntervalMs` and `settleMs` only turn taps into the session length §9.3 measures — the game
  * itself does not use them.
  *
- * Policies pick a group on the board, which is what §16.2 defines. The three-cell tap queue (§3)
+ * Policies pick a group on the board, which is what §16.2 defines. The two-deep tap queue (§7.5)
  * is not modelled here: the queue decides which legal group she can reach, not whether a group is
  * legal, so a policy that picks a random legal group makes the same choice at queue depth.
  */

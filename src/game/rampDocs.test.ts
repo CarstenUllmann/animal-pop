@@ -22,7 +22,21 @@ interface Row {
   bubbles: number
 }
 
+/** The columns §21 also records: the estimate of the shortest level and the measured median taps. */
+interface RecordedRow extends Row {
+  minTaps: number
+  medianTaps: number
+}
+
 const shipped: Row[] = LEVEL_RAMP.map(({ from, types, goalEach, bubbles }) => ({ from, types, goalEach, bubbles }))
+const shippedRecorded: RecordedRow[] = LEVEL_RAMP.map(({ from, types, goalEach, bubbles, minTaps, medianTaps }) => ({
+  from,
+  types,
+  goalEach,
+  bubbles,
+  minTaps,
+  medianTaps,
+}))
 
 /** §9.1's markdown table: `| 1–2 | 4 | 3 + 3 | 12 |`. */
 function tableRows(): Row[] {
@@ -48,18 +62,21 @@ function tableRows(): Row[] {
 }
 
 /** The `LEVEL_RAMP` excerpt in §21, the copy a reader is most likely to quote. */
-function excerptRows(): Row[] {
+function excerptRows(): RecordedRow[] {
   const start = spec.indexOf('## 21. Constants')
   expect(start).toBeGreaterThanOrEqual(0)
   const block = spec.slice(start, spec.indexOf('```', spec.indexOf('```ts', start) + 5))
-  const rows: Row[] = []
-  const pattern = /\{ from: (\d+),\s*types: (\d+), goalEach: (\d+), bubbles: (\d+) \}/g
+  const rows: RecordedRow[] = []
+  const pattern =
+    /\{ from: (\d+),\s*types: (\d+), goalEach: (\d+), bubbles: (\d+), minTaps: (\d+),\s*medianTaps: (\d+) \}/g
   for (let match = pattern.exec(block); match !== null; match = pattern.exec(block)) {
     rows.push({
       from: Number(match[1]),
       types: Number(match[2]),
       goalEach: Number(match[3]),
       bubbles: Number(match[4]),
+      minTaps: Number(match[5]),
+      medianTaps: Number(match[6]),
     })
   }
   return rows
@@ -71,7 +88,7 @@ describe('the ramp the spec quotes is the ramp the game ships (issue #22)', () =
   })
 
   it('§21 copies LEVEL_RAMP exactly, so a quoted constant cannot drift', () => {
-    expect(excerptRows()).toEqual(shipped)
+    expect(excerptRows()).toEqual(shippedRecorded)
   })
 
   it('both the table and the constants cite the simulator run they came from', () => {

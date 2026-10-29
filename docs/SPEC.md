@@ -53,10 +53,11 @@ Chrome on Android 8.1 is frozen at **Chrome 138** — no further updates. Theref
   and offline-first was not satisfied there. The worker is hand-written instead (`src/sw.ts`) and stays
   inside the Chrome 61 API surface: CacheStorage (42), FetchEvent (45), `skipWaiting` (45),
   `clients.claim` (45), cache query options (54). It is built as a plain script, because that engine
-  cannot register a module worker, and it precaches one file at a time, so a single unreachable file
-  does not take the whole cache down on a weak connection. Tracked on issue #23, and verified on the
-  device on 2026-10-25: the Firefox PWA cold-launches from cache with Wi-Fi off and airplane mode on, and
-  resumes the exact level it was left on.
+  cannot register a module worker, and it precaches each file on its own — concurrent fetches, each
+  with its own failure catch — so a single unreachable file does not take the whole cache down on a
+  weak connection. Tracked on issue #23, and verified on the device on 2026-10-25: the Firefox PWA
+  cold-launches from cache with Wi-Fi off and airplane mode on, and resumes the exact level it was
+  left on.
 - No CDN dependencies, no web fonts, no network requests at runtime. Everything is bundled.
 
 ---
@@ -148,7 +149,7 @@ resolveTap(group):
 
 Detection runs after every settle. If no group of ≥2 exists:
 
-1. Screen shake + **filtered-noise "whoosh"** (~400ms), animals scatter outward.
+1. Screen shake + **filtered-noise "whoosh"** (~450ms), animals scatter outward.
 2. New animals fly in and settle (~500ms).
 3. The reshuffle **guarantees at least one group of ≥ 3**.
 4. Costs nothing: no bubble, no goal.
@@ -403,15 +404,15 @@ All audio is **synthesised with the Web Audio API** in v1 — no files, no licen
 | Animal pop | Short blip, per-animal pitch from C-major pentatonic (C5, D5, E5, G5, A5, C6, D6, E6). Zero-crossing "pop" transient; louder/bigger pop for bigger clusters (arpeggiate cluster size) |
 | Bubble pop | Tiny high tick, distinct from animal pops |
 | Invalid tap | Muted low "boop", quiet |
-| Reshuffle | Filtered noise sweep, wind-like, 400ms |
+| Reshuffle | Filtered noise sweep, wind-like, 450ms |
 | Win fanfare | 4-note rising arpeggio + shimmer, ~1.2s |
 | Small party | Soft two-note "aww" chime |
 | Balloon pop | Short filtered noise + pitch blip |
 
 - **No looping background music.**
 - Audio context unlocks on the first tap (Android requires a gesture).
-- Mute toggle: small speaker icon, top-right, state persisted. All meaning must survive
-  muting (every sound has a visual twin).
+- Mute toggle: small speaker icon, top-right of the panel (issue #17), state persisted. All meaning
+  must survive muting (every sound has a visual twin).
 - Architecture: all playback goes through an `AudioPlayer` interface so a sample-based
   implementation (recorded/AI-generated assets) can replace the synth later without
   touching game code (§15).
@@ -474,22 +475,27 @@ device" gate — she plays however she's holding it).
 
 ```
 ┌──────────────────────────────────────────────┐
-│  Level 7                          [🔊]       │
-│ ┌──────────────┐   ┌──────────────────────┐  │
-│ │ Goal  🐱  4  │   │                      │  │
-│ │ Goal  🐸  6  │   │      6 × 6 board     │  │
-│ │              │   │                      │  │
-│ │ ○ ○ ○        │   │   (centred, slightly │  │
-│ │ ○ ○ ○        │   │        right)        │  │
-│ │ party rack   │   │                      │  │
-│ └──────────────┘   └──────────────────────┘  │
+│ ┌──────────────────┐   ┌───────────────────┐ │
+│ │ Level 7     [🔊] │   │                   │ │
+│ │ Goal  🐱  4      │   │   6 × 6 board     │ │
+│ │ Goal  🐸  6      │   │                   │ │
+│ │                  │   │  (centred,        │ │
+│ │ ○ ○ ○            │   │   slightly right) │ │
+│ │ ○ ○ ○            │   │                   │ │
+│ │ party rack       │   │                   │ │
+│ └──────────────────┘   └───────────────────┘ │
 └──────────────────────────────────────────────┘
 ```
 
-- Left panel: ~28–32% width, goals on top, bubble rack below.
+- Left panel: ~28–32% width, goals on top, bubble rack below; the level numeral and the mute
+  share its top row, with the mute in the panel's top-right corner (issue #17).
 - Board: on the right, centred in the remaining space, with margin.
-- Tap targets: board cell **≥ 90 CSS px** on the target device (~110–140px expected);
-  nothing interactive smaller than 64px.
+- Tap targets: board cell **≥ 90 CSS px** on the target device (~110–140px expected), and no
+  interactive target smaller than 64px except the board cell on a viewport smaller than the
+  tablet. There the cell clamps at 60px and, where even that is more than the board's area can
+  hold, the board overhangs its area and the viewport clips it; the root reports
+  `data-tap-target="too-small"` for any cell below 90. The target device never takes that path
+  (issue #10).
 - All sizing in viewport units / `clamp()` / `vmin`, no fixed pixel layout. Must survive the
   Pixel C's 1.41 aspect ratio and Chrome UI resizing.
 - Portrait fallback: panel stacks above the board, goals side by side, bubble rack becomes a
@@ -579,8 +585,9 @@ from the browser: launch the app, let it die, then open `?debug=1` in the browse
 - **Vite + TypeScript (strict), no UI framework.**
 - DOM + CSS for the board (36 real elements, CSS transforms for motion), one `<canvas>`
   overlay for fireworks/particles.
-- **A local Vite plugin** (`scripts/offline.ts`) for the service worker + manifest: it builds
-  `src/sw.ts` as a plain script with the build's file list baked in (ADR-0003).
+- **A local Vite plugin** (`scripts/offline.ts`) for the service worker: it builds `src/sw.ts` as a
+  plain script with the build's file list baked in (ADR-0003). `public/manifest.webmanifest` is a
+  static file, not generated.
 - **Vitest** for unit tests. Node script for the tuning simulator.
 - Later Android: wrap with **Capacitor** (no code changes expected).
 
@@ -615,11 +622,11 @@ randomness via injected `Rng`. This is what makes the simulator and tests possib
 Public core surface (approximate):
 
 ```ts
-createLevel(level: number, seed: number): LevelState
-getGroups(board: Board): Group[]
-tapCell(state: LevelState, index: number): TapResult   // 'invalid' | 'popped'
+createLevel(level: number, sessionSeed: number, pool: readonly AnimalId[], rng?: Rng): LevelState
+getGroups(board: Board, minSize?: number): Group[]
+resolveTap(state: LevelState, index: number, rng: Rng): TapResult  // outcome: 'invalid' | 'popped'
 isComplete(state: LevelState): boolean
-partySize(state: LevelState): { balloons: number; tier: PartyTier }
+partySize(state: LevelState): Party   // { balloons, tier, pct }
 ```
 
 ### PWA
@@ -845,18 +852,19 @@ export const PLATEAU_LEVEL = 16
 // 0x5eb00b1e, recorded in README.md. Rows 1-6 are the deliberate estimates; from level 7 every
 // rack is the floor-band sizing rule applied to the measurement (SPEC §9.1)
 export const LEVEL_RAMP = [
-  { from: 1,  types: 4, goalEach: 3, bubbles: 12 },  // estimate, deliberately over-funded
-  { from: 3,  types: 5, goalEach: 4, bubbles: 16 },  // estimate
-  { from: 7,  types: 5, goalEach: 5, bubbles: 20 },  // measured
-  { from: 9,  types: 5, goalEach: 6, bubbles: 22 },  // measured
-  { from: 11, types: 6, goalEach: 6, bubbles: 29 },  // measured
-  { from: 13, types: 6, goalEach: 7, bubbles: 33 },  // measured
-  { from: 16, types: 6, goalEach: 8, bubbles: 35 },  // measured plateau
+  { from: 1,  types: 4, goalEach: 3, bubbles: 12, minTaps: 3,  medianTaps: 7 },  // estimate, deliberately over-funded
+  { from: 3,  types: 5, goalEach: 4, bubbles: 16, minTaps: 6,  medianTaps: 10 }, // estimate
+  { from: 7,  types: 5, goalEach: 5, bubbles: 20, minTaps: 7,  medianTaps: 12 }, // measured
+  { from: 9,  types: 5, goalEach: 6, bubbles: 22, minTaps: 9,  medianTaps: 14 }, // measured
+  { from: 11, types: 6, goalEach: 6, bubbles: 29, minTaps: 11, medianTaps: 18 }, // measured
+  { from: 13, types: 6, goalEach: 7, bubbles: 33, minTaps: 13, medianTaps: 21 }, // measured
+  { from: 16, types: 6, goalEach: 8, bubbles: 35, minTaps: 15, medianTaps: 23 }, // measured plateau
 ]
 ```
 
-`rampDocs.test.ts` parses this block and §9.1's table and fails if either drifts from the shipped
-`LEVEL_RAMP`, so the spec cannot quote numbers the game no longer plays.
+`rampDocs.test.ts` parses this block, including the recorded `minTaps`/`medianTaps` columns, and §9.1's
+table, and fails if either drifts from the shipped `LEVEL_RAMP`, so the spec cannot quote numbers the game
+no longer plays.
 
 **How the first two rows were estimated:** a 6×6 board with *k* types averages
 legal clusters of roughly 2.8 / 2.5 / 2.2 animals for k = 4 / 5 / 6. A *greedy* tap (biggest

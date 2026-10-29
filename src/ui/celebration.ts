@@ -31,7 +31,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
  *
  * This is the only particle system in the game. Density is capped by `PARTICLES` and the burst
  * objects come from `ui/pool.ts`, which never grows past its capacity, so a burst cannot make the
- * old WebView stutter (SPEC §5). When frames run over budget for `degradeAfterMs` the layer drops
+ * old WebView stutter (SPEC §10.2). When frames run over budget for `degradeAfterMs` the layer drops
  * to the 30fps tier, and comes back after `recoverAfterMs` of frames inside the budget: one bad
  * stretch on the tablet would otherwise be the tier for the rest of the session (issue #12). That
  * decision is `ui/frameTier.ts`, where the measurement and the recovery are testable; this module
@@ -256,7 +256,7 @@ export function createCelebration(
 
   /**
    * A burst takes only what the pool can hand out, so a burst that would exceed the cap drops
-   * particles (SPEC §5). Under reduced motion the layer is hidden by CSS, so drawing a burst it cannot
+   * particles (SPEC §10.2). Under reduced motion the layer is hidden by CSS, so drawing a burst it cannot
    * show is only work: the debug row would report live particles while nothing renders (issue #12).
    */
   function spawnBurst(x: number, y: number): void {
