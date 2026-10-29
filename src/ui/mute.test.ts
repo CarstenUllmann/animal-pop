@@ -20,6 +20,7 @@ function fakePlayer(muted: boolean, order: string[]): AudioPlayer {
     playReshuffle: noop,
     playBubble: noop,
     playBalloon: noop,
+    playFirework: noop,
     playCompletion: noop,
     stop: noop,
     setMuted: (next: boolean) => {

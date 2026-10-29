@@ -94,8 +94,47 @@ export const AUDIO = {
   bubblePitch: 1568,
   bubbleGain: 0.06,
   bubbleDuration: 0.06,
-  balloonNoiseGain: 0.1,
-  balloonNoiseDuration: 0.12,
+  /**
+   * The balloon plopp: the latex giving way (the click) over the body it leaves behind (the tone),
+   * which drops from 320 Hz to 120 Hz. There is no pitched blip any more: a pop is the same pop every
+   * time, apart from the drift `ploppPitchJitter` allows.
+   */
+  ploppClickStartHz: 3600,
+  ploppClickEndHz: 1400,
+  ploppClickDuration: 0.02,
+  ploppClickGain: 0.1,
+  ploppBodyFromHz: 320,
+  ploppBodyToHz: 120,
+  ploppDuration: 0.14,
+  ploppGain: 0.22,
+  /**
+   * How far either side of its pitch a pop's body may sit, so a burst of taps is not one sound played
+   * twice. The offset comes from the seed the celebration passes in, which it draws from the injected
+   * `Rng` (SPEC §2), so a replayed session pops at the same pitches.
+   */
+  ploppPitchJitter: 0.06,
+  /**
+   * The firework bed: a muffled thump and a sparkle tail. It is weather, not an event, so it sits at 40%
+   * of a plopp's peak and nothing ducks when a pop lands: the thing she is tapping stays the loudest
+   * sound in the room. These are the levels as heard, not as measured - a low sine is perceived much
+   * quieter than a bright click at the same gain. This block is the dial if a listen says the bed stepped
+   * forward or disappeared.
+   */
+  fireworkThumpFromHz: 110,
+  fireworkThumpToHz: 42,
+  fireworkThumpDuration: 0.22,
+  /** The bed is 40% of a plopp's peak, which is the mix decided by ear (SPEC §11). The two ratios below
+   *  are the voice's internal balance, so retuning the bed scales all three together. */
+  fireworkThumpGain: 0.088,
+  fireworkAirDuration: 0.2,
+  fireworkAirGain: 0.03,
+  fireworkAirFilterStart: 320,
+  fireworkAirFilterEnd: 90,
+  fireworkCrackleMin: 11,
+  fireworkCrackleMax: 17,
+  fireworkCrackleGain: 0.015,
+  fireworkCrackleSpreadMin: 0.45,
+  fireworkCrackleSpreadMax: 0.65,
   /** Four-note rising arpeggio, C-E-G-C (SPEC §11). */
   fanfareNotes: [523.25, 659.25, 783.99, 1046.5],
   fanfareNoteSpacing: 0.28,
@@ -287,8 +326,6 @@ export const PARTICLES = {
   burstHuesMax: 3,
   /** The white-hot core shows for the first fifth of a particle's life. */
   hotCoreLifeFraction: 0.2,
-  /** One ambient burst every this many frames once the party is idle (SPEC §10.1 phase 4). */
-  ambientFrames: 60,
   /** 60fps budget; over it for `degradeAfterMs` drops the celebration to 30fps. */
   frameBudgetMs: 16.7,
   /**
@@ -352,8 +389,24 @@ export const CELEBRATION = {
    * test path unchanged.
    */
   playButtonDelayMs: 1500,
-  /** Rings the pentatonic pitches a balloon pop is drawn from (SPEC §11). */
-  balloonPitchHz: 1046.5,
+  /**
+   * The firework volley waits for the fanfare, so the party opens on one cue rather than two. The three
+   * bursts keep the rhythm SPEC §10.1 describes (a short gap, then a longer one) and simply start after
+   * the fanfare has had its say: 1200, 1380 and 1660 ms.
+   */
+  fireworkVolleyAtMs: 1200,
+  fireworkVolleyGapMs: 180,
+  fireworkVolleySecondGapMs: 280,
+  /**
+   * The bed starts once the volley has landed, so the party's first two seconds are one deliberate
+   * flourish rather than a flourish on top of a metronome. From there it is one burst and one thump a
+   * second for as long as she stays (SPEC §10.1 phase 4).
+   *
+   * It is a timer rather than a frame count: the cadence no longer halves on the 30fps tier, and it
+   * still runs under `prefers-reduced-motion`, where no frame-driven scene exists at all.
+   */
+  fireworkBedStartsAtMs: 2200,
+  fireworkBedMs: 1000,
 } as const
 
 /**

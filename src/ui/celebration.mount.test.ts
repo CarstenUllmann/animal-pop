@@ -38,18 +38,23 @@ const css = readFileSync(join(SRC, '..', 'style.css'), 'utf8').replace(/\/\*[\s\
 const BOARD = bunchMetricsFor(540, 135, 106)
 
 /** jsdom has no Web Audio, so the player only records what it was asked for. */
-function stubAudio(): { player: AudioPlayer; pops: number[] } {
+function stubAudio(): { player: AudioPlayer; pops: number[]; fireworks: number[] } {
   const pops: number[] = []
+  const fireworks: number[] = []
   return {
     pops,
+    fireworks,
     player: {
       unlock: () => {},
       playPop: () => {},
       playInvalid: () => {},
       playReshuffle: () => {},
       playBubble: () => {},
-      playBalloon: (index: number) => {
-        pops.push(index)
+      playBalloon: (seed: number) => {
+        pops.push(seed)
+      },
+      playFirework: (seed: number) => {
+        fireworks.push(seed)
       },
       playCompletion: () => {},
       stop: () => {},
@@ -64,6 +69,19 @@ interface Mounted {
   root: HTMLElement
   pops: number[]
   clock: FakeTimer
+}
+
+/**
+ * Every pop hands the player a seed in 0-1, which the synth turns into a small pitch drift (SPEC §11), so
+ * the mount can still prove one pop per tap without knowing a pitch. The set no longer supplies an index:
+ * it reorders as she pops, which is exactly why the index was not a pitch she could hear.
+ */
+function expectPops(pops: number[], count: number): void {
+  expect(pops).toHaveLength(count)
+  for (const seed of pops) {
+    expect(seed).toBeGreaterThanOrEqual(0)
+    expect(seed).toBeLessThan(1)
+  }
 }
 
 /** The seam the layer takes: the test decides when a delayed step runs, rather than sleeping for it. */
@@ -218,7 +236,7 @@ describe('a popped balloon collapses to nothing and leaves the layer (issue #35)
 
     const popped = asElement(balloonsIn(root)[0])
     popped.click()
-    expect(pops).toEqual([0])
+    expectPops(pops, 1)
     popped.click()
     expect(pops).toHaveLength(1)
     expect(popped.isConnected).toBe(true)
@@ -307,7 +325,7 @@ describe('the bunch replaces itself as she pops, so it never empties (issue #36)
     expect(asElement(refill[0]).style.animationDelay).toBe('0ms')
 
     // And the refill made no sound on its way in: the only entry is the tap.
-    expect(pops).toEqual([0])
+    expectPops(pops, 1)
   })
 
   it('makes no sound at spawn, so the pop is the only sound a balloon makes', () => {
@@ -316,17 +334,17 @@ describe('the bunch replaces itself as she pops, so it never empties (issue #36)
 
     clock.advance(300)
     expect(balloonsIn(root)).toHaveLength(2)
-    expect(pops).toEqual([])
+    expectPops(pops, 0)
 
     // The pitch is the index in the set as it is now (SPEC §11), not the chime it was hung with.
     const second = asElement(balloonsIn(root)[1])
     second.click()
-    expect(pops).toEqual([1])
+    expectPops(pops, 1)
 
     clock.advance(AFTER_COLLAPSE)
     // The slot refilled, and the refill was silent on the way in.
     expect(balloonsIn(root)).toHaveLength(2)
-    expect(pops).toEqual([1])
+    expectPops(pops, 1)
   })
 
   it('pops a balloon that is still climbing, exactly like one at rest', () => {
@@ -343,7 +361,7 @@ describe('the bunch replaces itself as she pops, so it never empties (issue #36)
     const climbing = asElement(balloonsIn(root)[1])
     climbing.click()
     expect(climbing.classList.contains('balloon--popped')).toBe(true)
-    expect(pops).toEqual([0, 1])
+    expectPops(pops, 2)
     expect(climbing.isConnected).toBe(true)
 
     clock.advance(AFTER_COLLAPSE)

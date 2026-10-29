@@ -30,14 +30,16 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
     expect(source).toContain("play.classList.remove('next--pulsing')")
   })
 
-  it('opens the party with a three-burst volley instead of waiting for a balloon or the ambient timer', () => {
-    // SPEC §10.1 phase 1 (issue #27): three bursts at 0/180/460ms. The ambient burst is every 60
-    // frames, so a party that only drew on a balloon pop opened on a dimmed, still board.
+  it('opens the party with a three-burst volley, after the fanfare has had its say (SPEC §10.1, §11)', () => {
+    // SPEC §10.1 phase 1 (issue #27): three bursts, still one flourish. Since the celebration sound
+    // rework they wait for the fanfare rather than landing on top of it, so the party opens on one cue.
     const start = section('function start(): void {', 'function stop(): void {')
-    expect(start).toContain('spawnBurst(')
     expect(start).toContain('draw()')
-    expect(start).toContain('later(180,')
-    expect(start).toContain('later(460,')
+    expect(start).toContain('later(CELEBRATION.fireworkVolleyAtMs,')
+    expect(start).toContain('CELEBRATION.fireworkVolleyGapMs')
+    expect(start).toContain('CELEBRATION.fireworkVolleySecondGapMs')
+    // Picture and sound are one call, so a burst cannot be drawn without the thump that belongs to it.
+    expect(section('function firework(', 'function startBed(')).toContain('spawnBurst(')
   })
 
   it('owns and clears every timer it schedules, so a left party cannot tick into the next one', () => {
@@ -167,12 +169,12 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
     expect(pop).toContain('spawnBalloon(place, 0)')
     expect(spawn).toContain('el.style.animationDelay = `${delayMs}ms`')
 
-    // Sound belongs to the pop only, so the pop's pitch is the index in the set as it is now, and the entry
-    // chime with the `chimeIndex` it needed is gone (SPEC §11). The debug step for the first balloon is
+    // Sound belongs to the pop only, and the pop draws its pitch drift from the injected `Rng` rather
+    // than from its position in a set that reorders as she pops. The debug step for the first balloon is
     // reported at hang time, once per set, because a spawn has nothing left to report it from (issue #18).
     expect(spawn).not.toContain('audio.')
     expect(source).not.toContain('chimeIndex')
-    expect(pop).toContain('audio.playBalloon(balloons.indexOf(balloon))')
+    expect(pop).toContain('audio.playBalloon(rng.next())')
     expect(hang).toContain('opts.onFirstBalloon')
 
     // A mid-rise balloon is tappable and pops exactly like one at rest, because the pop is not a state of the
@@ -271,7 +273,40 @@ describe('celebration module (issues #12, #13, #25-#28)', () => {
     expect(PARTICLES.perBurst).toBe(120)
     expect(PARTICLES.degradePerBurst).toBe(60)
     expect(PARTICLES.capacity).toBe(500)
-    expect(PARTICLES.ambientFrames).toBe(60)
     expect(LAYOUT.dprMax).toBe(2)
+  })
+
+  it('opens the party with the fanfare alone, then a volley, then the bed (SPEC §10.1, §11)', () => {
+    const start = section('function start(): void {', 'function stop(): void {')
+    const bed = section('function startBed(): void {', 'function start(): void {')
+    const firework = section('function firework(', 'function startBed(')
+
+    // The volley waits for the fanfare rather than landing on top of it, and it keeps the short-gap,
+    // long-gap rhythm the spec describes. A party that opens on two cues at once is the thing this fixes.
+    expect(CELEBRATION.fireworkVolleyAtMs).toBeGreaterThanOrEqual(1200)
+    expect(CELEBRATION.fireworkVolleyGapMs).toBe(180)
+    expect(CELEBRATION.fireworkVolleySecondGapMs).toBe(280)
+    expect(start).toContain('later(CELEBRATION.fireworkVolleyAtMs')
+
+    // The bed starts after the volley has landed, so the first two seconds are one flourish.
+    expect(CELEBRATION.fireworkBedStartsAtMs).toBeGreaterThan(
+      CELEBRATION.fireworkVolleyAtMs + CELEBRATION.fireworkVolleySecondGapMs,
+    )
+    expect(start).toContain('later(CELEBRATION.fireworkBedStartsAtMs, startBed)')
+
+    // One burst and one thump a second, from the same beat: the seed the player gets is drawn from the
+    // same `Rng` that draws the burst, so the thump belongs to it and a replay sounds the same (SPEC §2).
+    expect(CELEBRATION.fireworkBedMs).toBe(1000)
+    expect(bed).toContain('later(CELEBRATION.fireworkBedMs, startBed)')
+    expect(bed).toContain('firework(rng.next()')
+    expect(firework).toContain('spawnBurst(')
+    expect(firework).toContain('audio.playFirework(rng.next())')
+
+    // A timer, not a frame count: the cadence no longer halves on the 30fps tier, and the bed still
+    // sounds under reduced motion, where the draw loop never starts at all.
+    expect(source).not.toContain('ambientFrames')
+    expect(source).not.toContain('frameCount')
+    expect(firework).toContain('if (!reducedMotion) spawnBurst(')
+    expect(firework.indexOf('if (!reducedMotion) spawnBurst(')).toBeLessThan(firework.indexOf('audio.playFirework'))
   })
 })

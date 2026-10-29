@@ -4,13 +4,18 @@ import { createSynthPlayer } from './synth'
 
 class FakeParam {
   value = 0
-  setValueAtTime(): this {
+  /** Every value written, so a test can tell one seed's pitch from another's. */
+  readonly points: number[] = []
+  setValueAtTime(value: number): this {
+    this.points.push(value)
     return this
   }
-  linearRampToValueAtTime(): this {
+  linearRampToValueAtTime(value: number): this {
+    this.points.push(value)
     return this
   }
-  exponentialRampToValueAtTime(): this {
+  exponentialRampToValueAtTime(value: number): this {
+    this.points.push(value)
     return this
   }
 }
@@ -35,6 +40,7 @@ class FakeOscillator extends FakeNode {
 }
 
 class FakeBuffer {
+  duration = 2
   getChannelData(): Float32Array {
     return new Float32Array(64)
   }
@@ -69,6 +75,7 @@ class FakeContext {
   }
 
   readonly gains: FakeGain[] = []
+  readonly oscillators: FakeOscillator[] = []
   readonly destination = new FakeNode()
   readonly sampleRate = 8000
   state: 'suspended' | 'running' | 'closed' = 'suspended'
@@ -91,7 +98,9 @@ class FakeContext {
 
   createOscillator(): FakeOscillator {
     FakeContext.oscillators += 1
-    return new FakeOscillator()
+    const osc = new FakeOscillator()
+    this.oscillators.push(osc)
+    return osc
   }
 
   createBuffer(): FakeBuffer {
@@ -224,5 +233,87 @@ describe('createSynthPlayer', () => {
     // Nothing left to cancel, so a second stop is quiet and the list does not keep growing.
     player.stop()
     expect(FakeContext.stops).toBe(scheduled * 2)
+  })
+
+  it('plopps a balloon as a click over a body that drops in pitch, with no ladder left (SPEC §11)', () => {
+    const player = createSynthPlayer()
+    player.unlock()
+    const ctx = FakeContext.instances[0] as FakeContext
+
+    player.playBalloon(0.5)
+    // One noise grain for the latex and one tone for the body: the pentatonic blip is gone, so a pop is
+    // two nodes rather than two nodes plus a pitched chirp.
+    expect(FakeContext.bufferSources).toBe(1)
+    expect(ctx.oscillators).toHaveLength(1)
+
+    const body = ctx.oscillators[0] as FakeOscillator
+    const from = body.frequency.points[0] as number
+    const to = body.frequency.points[1] as number
+    // The seed drifts the pair together, so the body keeps its shape: that fall is what makes it a plopp
+    // rather than the small glide a blip uses.
+    expect(from).toBeGreaterThanOrEqual(AUDIO.ploppBodyFromHz * (1 - AUDIO.ploppPitchJitter))
+    expect(from).toBeLessThanOrEqual(AUDIO.ploppBodyFromHz * (1 + AUDIO.ploppPitchJitter))
+    expect(to / from).toBeCloseTo(AUDIO.ploppBodyToHz / AUDIO.ploppBodyFromHz, 5)
+  })
+
+  it('drifts a plopp from the seed it was handed, so a replay pops the same pitches (SPEC §2)', () => {
+    const player = createSynthPlayer()
+    player.unlock()
+    const ctx = FakeContext.instances[0] as FakeContext
+
+    player.playBalloon(0.1)
+    player.playBalloon(0.1)
+    player.playBalloon(0.9)
+
+    const first = ctx.oscillators[0]?.frequency.points[0]
+    const again = ctx.oscillators[1]?.frequency.points[0]
+    const other = ctx.oscillators[2]?.frequency.points[0]
+
+    expect(first).toBe(again)
+    expect(other).not.toBe(first)
+    // The drift is small: a pop that wandered would stop sounding like the same balloon.
+    expect(first).toBeGreaterThanOrEqual(AUDIO.ploppBodyFromHz * (1 - AUDIO.ploppPitchJitter))
+    expect(first).toBeLessThanOrEqual(AUDIO.ploppBodyFromHz * (1 + AUDIO.ploppPitchJitter))
+  })
+
+  it('sounds a firework as a thump plus a sparkle tail, under the plopp (SPEC §11)', () => {
+    const player = createSynthPlayer()
+    player.unlock()
+    const ctx = FakeContext.instances[0] as FakeContext
+
+    player.playFirework(0.4)
+    // One tone for the thump, one noise grain for the air, and the sparkle tail on top of it.
+    expect(ctx.oscillators).toHaveLength(1)
+    expect(FakeContext.bufferSources).toBeGreaterThanOrEqual(AUDIO.fireworkCrackleMin + 1)
+    expect(FakeContext.bufferSources).toBeLessThanOrEqual(AUDIO.fireworkCrackleMax + 1)
+
+    // Weather, not an event: the bed is 40% of a plopp's peak and nothing ducks when a pop lands, so the
+    // thing she is tapping stays the loudest sound in the room (SPEC §11).
+    expect(AUDIO.fireworkThumpGain).toBeLessThan(AUDIO.ploppGain)
+    expect(AUDIO.fireworkThumpGain).toBeCloseTo(0.4 * AUDIO.ploppGain, 3)
+
+    const thump = ctx.oscillators[0] as FakeOscillator
+    expect(thump.frequency.points[0]).toBeCloseTo(AUDIO.fireworkThumpFromHz, -1)
+  })
+
+  it('varies a firework from its seed, so two bursts are not the same sound', () => {
+    const player = createSynthPlayer()
+    player.unlock()
+    const ctx = FakeContext.instances[0] as FakeContext
+
+    player.playFirework(0.2)
+    const before = FakeContext.bufferSources
+    player.playFirework(0.2)
+    const sameSeed = FakeContext.bufferSources - before
+
+    const firstThump = ctx.oscillators[0]?.frequency.points[0]
+    const secondThump = ctx.oscillators[1]?.frequency.points[0]
+    // A replay is the same party: the same seed is the same burst, down to how many sparks it spends.
+    expect(secondThump).toBe(firstThump)
+    expect(sameSeed).toBeGreaterThanOrEqual(AUDIO.fireworkCrackleMin + 1)
+
+    player.playFirework(0.85)
+    const otherThump = ctx.oscillators[2]?.frequency.points[0]
+    expect(otherThump).not.toBe(firstThump)
   })
 })

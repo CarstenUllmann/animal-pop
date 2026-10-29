@@ -175,7 +175,6 @@ export function createCelebration(
   let raf = 0
   /** When the last drawn frame started, so `dt` is the time between drawn frames, not the ticks. */
   let drawnAt = 0
-  let frameCount = 0
   /**
    * Every pending timer this layer owns: the play-arrow reveal, the opening bursts and the exits that remove a
    * collapsing balloon (issue #35). `stop()` clears them all, so a party that has been left cannot tick into
@@ -312,11 +311,9 @@ export function createCelebration(
       particle.vy += PARTICLES.gravityPxPerSecond * dt
     }
 
-    frameCount += 1
-    // SPEC §10.1 phase 4: the scene stays alive between taps, well under the cap.
-    if (balloons.length > 0 && frameCount % PARTICLES.ambientFrames === 0 && particles.activeCount() < PARTICLES.capacity / 2) {
-      spawnBurst(rng.next() * canvas.width / dpr, rng.next() * canvas.height / dpr)
-    }
+    // SPEC §10.1 phase 4: the scene stays alive between taps, well under the cap. The bed's own bursts
+    // come from `startBed`'s timer rather than from this loop, so the party sounds the same at 30fps and
+    // under reduced motion, where this loop never runs at all.
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.save()
@@ -344,6 +341,32 @@ export function createCelebration(
     ctx.restore()
 
     raf = window.requestAnimationFrame(draw)
+  }
+
+  /**
+   * One firework: picture and sound from the same beat (SPEC §10.1 phase 1, §11). The burst is drawn
+   * from the injected `Rng` and the seed the player receives comes from that same `Rng`, so the thump
+   * belongs to this burst and a replayed session hears the same party (SPEC §2).
+   *
+   * Under reduced motion nothing is drawn, and the sound still plays: the bed is atmosphere, not a
+   * decoration of a movement, so a party with the fireworks turned off on screen still sounds like one.
+   */
+  function firework(fx: number, fy: number): void {
+    if (!running) return
+    if (!reducedMotion) spawnBurst((canvas.width / dpr) * fx, (canvas.height / dpr) * fy)
+    audio.playFirework(rng.next())
+  }
+
+  /**
+   * The bed (SPEC §10.1 phase 4): one burst and one thump a second for as long as she stays, from
+   * somewhere different on the board each time. It is a timer rather than a frame count, so the cadence
+   * does not halve on the 30fps tier and it survives `prefers-reduced-motion`, where no frame-driven
+   * scene exists at all. `stop()` clears the pending tick with every other timer this layer owns.
+   */
+  function startBed(): void {
+    if (!running) return
+    firework(rng.next(), 0.15 + rng.next() * 0.7)
+    later(CELEBRATION.fireworkBedMs, startBed)
   }
 
   /** The number of balloons this set: the bubbles she has left, capped at twelve (SPEC §10.1, issue #13). It
@@ -403,9 +426,9 @@ export function createCelebration(
     // context may not exist yet. This tap is the gesture that may create it, exactly as Android requires
     // (SPEC §11); on a party she played into, unlock is a no-op.
     audio.unlock()
-    // Issue #36: sound belongs to the pop only, so this is the only place a balloon makes it. The pitch is
-    // its index in the set she can see now, which is what `audio/synth.ts` reads it as (SPEC §11).
-    audio.playBalloon(balloons.indexOf(balloon))
+    // Issue #36: sound belongs to the pop only, so this is the only place a balloon makes it. The seed is
+    // drawn from the injected `Rng`, so a replayed party pops at the same pitches (SPEC §2, SPEC §11).
+    audio.playBalloon(rng.next())
 
     // The burst belongs to this pop and fires at pop time, from the balloon's own box (issue #27).
     const own = balloon.el.getBoundingClientRect()
@@ -517,23 +540,16 @@ export function createCelebration(
     // the same number, so the fade-in and the tap-ability cannot drift apart.
     play.style.setProperty('--play-button-delay', `${playDelay}ms`)
 
-    if (!reducedMotion) {
-      draw()
-      // SPEC §10.1 phase 1 (issue #27): the party opens with a three-burst volley across the board, at
-      // 0/180/460ms. Waiting for the first balloon pop or the ambient timer meant the "party" opened on
-      // a dimmed, still board.
-      const width = canvas.width / dpr
-      const height = canvas.height / dpr
-      spawnBurst(width * 0.5, height * 0.42)
-      later(180, () => {
-        if (!running) return
-        spawnBurst(width * 0.27, height * 0.55)
-      })
-      later(460, () => {
-        if (!running) return
-        spawnBurst(width * 0.73, height * 0.5)
-      })
-    }
+    if (!reducedMotion) draw()
+    // SPEC §10.1 phase 1 (issue #27, SPEC §11): the party opens with a three-burst volley, and since the
+    // celebration sound rework the volley waits for the fanfare above rather than landing on top of it,
+    // so the party opens on one cue instead of two. The bursts keep the rhythm the spec describes - a
+    // short gap, then a longer one - and the bed only starts once they have landed, so the first two
+    // seconds are a flourish rather than a flourish under a metronome.
+    later(CELEBRATION.fireworkVolleyAtMs, () => firework(0.5, 0.42))
+    later(CELEBRATION.fireworkVolleyAtMs + CELEBRATION.fireworkVolleyGapMs, () => firework(0.27, 0.55))
+    later(CELEBRATION.fireworkVolleyAtMs + CELEBRATION.fireworkVolleySecondGapMs, () => firework(0.73, 0.5))
+    later(CELEBRATION.fireworkBedStartsAtMs, startBed)
 
     hangBunch()
 

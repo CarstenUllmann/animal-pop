@@ -291,12 +291,12 @@ board; the board itself dims and stops accepting taps (except balloon taps).
 | Phase | Timing | Content |
 |-------|--------|---------|
 | 0 | 0ms | Pop burst on the final goal, ring snaps full |
-| 1 | 0–460ms | Fireworks begin behind/above the board, tier from §8.4. The party opens with a three-burst volley at 0/180/460ms |
+| 1 | 1200–1660ms | Fireworks begin behind/above the board, tier from §8.4. The volley waits for the fanfare (§11) rather than landing on top of it, so the party opens on one cue: three bursts at 1200/1380/1660ms |
 | 2 | 0–2.5s | Balloons climb from below the board edge, one at a time, 1200ms each with a decelerating ease and a 120ms stagger, then settle into a swaying, overlapping bunch **inside** the board (see *The bunch*). The first lands at ~1.2s, the twelfth at ~2.5s; the float never stops |
 | 3 | after the last balloon lands: `1200 + (n−1) × 120` ms (2.52s at twelve balloons, 1.44s at three) | Big pulsing ▶ button fades in, bottom-centre, already clear of the balloons |
-| 4 | until she taps ▶ | Everything keeps running (slow ambient fireworks every ~1s, and the bunch replaces itself as she pops, so it never empties) |
+| 4 | until she taps ▶ | Everything keeps running (a firework bed of one burst a second, and the bunch replaces itself as she pops, so it never empties) |
 
-- Balloon tap → pop + sparkle burst + pop sound (pitch from a pentatonic set). Satisfying.
+- Balloon tap → pop + sparkle burst + pop sound (a latex click over a body that drops in pitch). Satisfying.
 - Balloons are **optional**: ▶ is tappable from the moment it appears.
 - Celebration never ends by itself. She decides when to move on.
 - If `fireworkTier === "small"` (careless play) the fanfare is replaced by a soft two-note
@@ -374,8 +374,8 @@ The burst reads as a firework, not a handful of yellow arcs (issue #27). A seven
 at **spawn** from the injected `Rng` — never per frame, because that would break replay determinism
 and spend main-thread time. About one particle in five is near-white, so a burst sparkles instead
 of reading as confetti. Radius is jittered 2–5px, a white-hot core shows for the first ~20% of a
-particle's life, and the radius shrinks as it dies. No motion trails. The atmosphere burst runs
-every 60 frames (~1s), and the opening volley is three bursts; worst case is 360 live particles
+particle's life, and the radius shrinks as it dies. No motion trails. The bed runs one burst a second on a
+timer rather than every 60 frames, and the opening volley is three bursts; worst case is 360 live particles
 against the unchanged 500-particle pool, so nothing allocates.
 
 "Frame time" is the interval the browser actually delivers between animation frames, not the time the
@@ -407,8 +407,23 @@ All audio is **synthesised with the Web Audio API** in v1 — no files, no licen
 | Reshuffle | Filtered noise sweep, wind-like, 450ms |
 | Win fanfare | 4-note rising arpeggio + shimmer, ~1.2s |
 | Small party | Soft two-note "aww" chime |
-| Balloon pop | Short filtered noise + pitch blip |
+| Balloon pop | A bright latex click over a body that drops 320→120 Hz. No pitched blip and no ladder: a pop is the same pop every time, apart from a ±6% drift |
+| Firework | A muffled 110→42 Hz thump with a sparkle tail, at 40% of a balloon pop's peak because it is weather, not an event |
 
+- **The celebration's sound is one arc, not two cues at once.** The fanfare owns the first 1.2s; the
+  three-burst firework volley follows it (§10.1), and the bed of one burst a second starts after the
+  volley has landed. A party that opened on a fanfare *and* a firework was two events competing for the
+  same moment.
+- **The bed is atmosphere, so it does not depend on a frame.** It runs from a timer rather than from the
+  draw loop: the cadence does not halve on the `30fps` tier, and it still sounds under
+  `prefers-reduced-motion`, where no bursts are drawn. The sound survives; only the movement goes.
+- **Variation is seeded, never ambient.** A firework's pitch, level, spark count and scatter, and a
+  balloon pop's small pitch drift, all come from a 0–1 seed the celebration draws from the injected
+  `Rng`. The synth holds no random state of its own, so a replayed session hears the same party (§2).
+- **The bed is 40% of a pop's peak, and nothing ducks.** A pop is an event, the fireworks are weather,
+  so the thing she is tapping stays the loudest sound in the room: the bed does not dip when a balloon
+  goes, and it does not taper while she stays. The numbers in `AUDIO` are levels as heard, not as
+  measured — a low sine is much quieter to the ear than a bright click at the same gain.
 - **No looping background music.**
 - Audio context unlocks on the first tap (Android requires a gesture).
 - Mute toggle: small speaker icon, top-right of the panel (issue #17), state persisted. All meaning

@@ -42,9 +42,13 @@ const TOO_NEW: Record<string, number> = {
 /**
  * Syntax the target can downlevel but this engine still cannot parse, so a source that uses it is
  * only safe if the build really rewrites it — which is what the second half of this test checks.
+ *
+ * The third field is a guard for a token that can also be something else. `?.` before a digit is not
+ * chaining: it is a ternary whose branch is a decimal, which the minifier writes as `?.01`. Optional
+ * chaining is always followed by a name, a bracket or a call.
  */
-const TOO_NEW_SYNTAX: Array<[string, string]> = [
-  ['optional chaining', '?.'],
+const TOO_NEW_SYNTAX: Array<[string, string, string?]> = [
+  ['optional chaining', '?.', '(?!\\d)'],
   ['nullish coalescing', '??'],
   ['optional catch binding', 'catch {'],
   ['private class field', '#'],
@@ -145,11 +149,14 @@ function cssOffenders(raw: string, name: string): string[] {
 function offendersIn(text: string, name: string): string[] {
   const found: string[] = []
   text.split('\n').forEach((line, position) => {
-    for (const [label, token] of TOO_NEW_SYNTAX) {
+    for (const [label, token, guard] of TOO_NEW_SYNTAX) {
       if (token === '#') {
         // A `#` is only a private field when it follows a class member boundary, not when it is
         // text in a CSS selector or an id.
         if (/(^|[\s{;}])#[A-Za-z_]/.test(line)) found.push(`${name}:${position + 1}: ${label}: ${line.trim()}`)
+      } else if (guard !== undefined) {
+        const pattern = new RegExp(`${token.replace(/[?.]/g, '\\$&')}${guard}`)
+        if (pattern.test(line)) found.push(`${name}:${position + 1}: ${label}: ${line.trim()}`)
       } else if (line.includes(token)) {
         found.push(`${name}:${position + 1}: ${label}: ${line.trim()}`)
       }

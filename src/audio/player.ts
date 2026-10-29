@@ -15,8 +15,18 @@ export interface AudioPlayer {
   playReshuffle(): void
   /** Tiny high tick as one bubble leaves the rack, distinct from an animal pop (SPEC §11). */
   playBubble(): void
-  /** Balloon pop: filtered noise plus a pitch blip, ascending with the balloon index (SPEC §11). */
-  playBalloon(index: number): void
+  /**
+   * Balloon pop: the latex snapping over a body that drops in pitch (SPEC §11). `seed` is 0-1 and
+   * drifts the pitch a little, so a handful of taps is not one sound replayed; the celebration takes it
+   * from the injected `Rng`, so a replayed session pops at the same pitches (SPEC §2).
+   */
+  playBalloon(seed: number): void
+  /**
+   * One firework, as the party's background bed (SPEC §10.1 phase 4, §11): a muffled thump and a
+   * sparkle tail, well under a plopp. `seed` is 0-1 and decides this burst's pitch, level, spark count
+   * and scatter, from the same `Rng` as the burst that is drawn for it.
+   */
+  playFirework(seed: number): void
   /** Completion cue: fanfare for a big or medium party, soft two-note chime for a small one. */
   playCompletion(tier: PartyTier): void
   /**
