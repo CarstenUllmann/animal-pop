@@ -490,10 +490,12 @@ device" gate — she plays however she's holding it).
 - Left panel: ~28–32% width, goals on top, bubble rack below; the level numeral and the mute
   share its top row, with the mute in the panel's top-right corner (issue #17).
 - Board: on the right, centred in the remaining space, with margin.
-- Tap targets: board cell **≥ 90 CSS px** on the target device (~110–140px expected);
-  nothing interactive smaller than 64px, except the board cell on a viewport smaller than the
-  tablet, which clamps at 60px so the board overruns its area as little as possible. That case is
-  reported as `data-tap-target="too-small"` rather than passing silently (issue #10).
+- Tap targets: board cell **≥ 90 CSS px** on the target device (~110–140px expected), and no
+  interactive target smaller than 64px except the board cell on a viewport smaller than the
+  tablet. There the cell clamps at 60px and, where even that is more than the board's area can
+  hold, the board overhangs its area and the viewport clips it; the root reports
+  `data-tap-target="too-small"` for any cell below 90. The target device never takes that path
+  (issue #10).
 - All sizing in viewport units / `clamp()` / `vmin`, no fixed pixel layout. Must survive the
   Pixel C's 1.41 aspect ratio and Chrome UI resizing.
 - Portrait fallback: panel stacks above the board, goals side by side, bubble rack becomes a

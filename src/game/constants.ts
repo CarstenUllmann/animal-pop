@@ -127,9 +127,9 @@ export const LAYOUT = {
   landscapeBoardFraction: 0.90,
   /**
    * Cell bounds. The floor is below §13's 64 CSS px interactive floor on purpose: it is the
-   * smallest-board fallback for a viewport smaller than the spec assumes, where the root reports
-   * `data-tap-target="too-small"` instead of clipping the board further. The target device never
-   * takes this path (its cell is 90).
+   * smallest-board fallback for a viewport smaller than the spec assumes. The cell stops at 60
+   * rather than shrinking until the board fits, so the board overhangs its area and the root
+   * reports `data-tap-target="too-small"`. The target device never takes this path (its cell is 90).
    */
   cellMinPx: 60,
   cellMaxPx: 128,
