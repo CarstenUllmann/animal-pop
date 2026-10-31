@@ -1,7 +1,8 @@
 # Pop Pals — Game Spec
 
-Status: **draft v1, ready for build**
-Last updated: 2026-10-25
+Status: **v1 feature-complete.** M0–M4 have shipped and the ramp is tuned (M5); the human checks
+in §20 are still open.
+Last updated: 2026-10-31
 Target: browser (PWA) on an old Android tablet; Android APK possible later
 
 ---
@@ -115,14 +116,10 @@ Chrome on Android 8.1 is frozen at **Chrome 138** — no further updates. Theref
 
 ```
 resolveTap(group):
-  pending   = []                                  // animals to be popped
-  counts    = countByAnimal(group)                // e.g. {cat: 3, frog: 1}
-  for each animal type in group:
-      pending.push({ animal, count })
+  counts      = countByAnimal(group)              // a group is one animal, e.g. {cat: 3}
   clear cells of group -> null
-  bubblesLeft -= 1                                // exactly one, regardless of size
-  for each goal g: g.remaining -= counts[g.animal]
-  clamp bubblesLeft at MIN_BUBBLES (= 1)          // never fully drains, see §8.3
+  bubblesLeft = max(MIN_BUBBLES, bubblesLeft - 1) // exactly one, regardless of size, never drains (§8.3)
+  for each goal g: g.remaining = max(0, g.remaining - counts[g.animal])
   apply gravity + refill (§7.3)
   if no legal group exists after settle: reshuffle (§7.4)
   if all goals reached: complete level (§10)
@@ -204,8 +201,8 @@ fireworkTier = partyPct >= 0.50 ? "big"
              : "small"
 ```
 
-- `partyPct` (not the raw count) drives intensity, so a late level with ~39 bubbles can still
-  produce a "big" party without spawning 39 balloons.
+- `partyPct` (not the raw count) drives intensity, so a late level with 35 bubbles can still
+  produce a "big" party without spawning 35 balloons.
 
 ---
 
@@ -317,9 +314,10 @@ position inside the blob, immediately, with no stagger delay and no sound — so
 bunch never empties and she always has something to pop. The cap stays twelve whatever the rack holds (§8.4),
 and the play arrow's delay is still computed from the original party size (§10.1 phase 3).
 
-**The bunch (issues #32, #33, #34).** A balloon is `min(boardW × 0.195, boardH × 0.225)` CSS px — 1.5× the
-factors this section used before — floored at 120px so a −6% jittered balloon still clears the 90px tap
-target, and jittered ±6% per balloon: 135px on the target tablet. The size is written by `ui/layout.ts` as
+**The bunch (issues #32, #33, #34).** A balloon is `min(boardAreaW × 0.195, boardAreaH × 0.225)` CSS px,
+jittered ±6% per balloon. The 120px floor is applied **after** the jitter — a 128px nominal base — so the
+smallest balloon still clears the 90px tap target. At the 1024×600 target viewport that is 135px; the
+installed app's 1280×724 viewport gets 163px (§16.3). The size is written by `ui/layout.ts` as
 `--balloon-px`, not as a fixed pixel value.
 
 Positions are computed against the painted board square, not as percentages of the overlay: `ui/layout.ts`
@@ -332,7 +330,8 @@ place, not about the climb.
 
 The bunch is a scattered blob, not a row: up to twelve balloons, each centre at least 0.55 × the mean of
 its own and its neighbour's jittered width away from every other centre, so no balloon is fully buried. On
-the target tablet that is two rows of six with about 56% of each balloon exposed. When a board cannot hold
+the 1024×600 target viewport the 55% rung counts 15 centres (five columns of three), so twelve balloons fit
+with about 55% of each exposed. When a board cannot hold
 twelve at that spacing, size holds first, spacing tightens to a 40% exposure floor, and only then does the
 count drop — a phone gets about five, which is still a bunch she can read. Taps go to the balloon painted
 on top, and the back of the blob is painted first so it reads as behind. The play arrow keeps its own 16px
@@ -459,7 +458,8 @@ Deliberately excluded: tiger/lion/bear — they read as "cat" at tablet distance
 
 ### 12.2 Asset swap contract
 
-The pool lives in a single manifest, `src/game/animals.ts`:
+The pool is two data files: `src/game/animalIds.ts` lists the ids without importing the SVG graph
+(so the simulator can run in plain node), and `src/game/animals.ts` gives each id its face and pitch:
 
 ```ts
 export interface AnimalDef {
@@ -471,10 +471,10 @@ export interface AnimalDef {
 export const ANIMAL_POOL: AnimalDef[] = [...]
 ```
 
-Adding, removing, renaming, or re-drawing an animal is a **data change only**. When her own
-own doodles are ready: crop/trace to SVG, drop files in `src/assets/animals/`, point
-`face` at them. No game-logic, layout, or audio code changes. Keep `id` stable and reuse the
-old pitch; replace the art, not the identity.
+Adding, removing, renaming, or re-drawing an animal is a **data change only**. Add the id to
+`ANIMAL_IDS`, then point its `FACES` and `PITCHES` entries in `animals.ts` at the new file; when her own
+doodles are ready, crop/trace them to SVG and drop them in `src/assets/animals/`. No game-logic, layout,
+or audio code changes. Keep `id` stable and reuse the old pitch; replace the art, not the identity.
 
 Constraints for replacement art: square-ish framing, transparent background, no text,
 thick outline, and still distinguishable from the other 7 in silhouette.
@@ -511,13 +511,15 @@ device" gate — she plays however she's holding it).
   hold, the board overhangs its area and the viewport clips it; the root reports
   `data-tap-target="too-small"` for any cell below 90. The target device never takes that path
   (issue #10).
-- All sizing in viewport units / `clamp()` / `vmin`, no fixed pixel layout. Must survive the
-  Pixel C's 1.41 aspect ratio and Chrome UI resizing.
+- All sizing derives from the viewport: `ui/layout.ts` writes the custom properties, `clamp()`
+  bounds them, and no fixed pixel layout is used. Must survive the Pixel C's 1.41 aspect ratio and
+  Chrome UI resizing.
 - Portrait fallback: panel stacks above the board, goals side by side, bubble rack becomes a
-  horizontal band across the panel width (ADR-0001: the rack sized for 35 wraps to 3 rows at the
-  target density, inside the panel row it has). Board stays square and centred.
-- Party balloons are sized from the board area (`min(boardW × 0.195, boardH × 0.225)`, base floor
-  120px so a −6% jittered balloon still clears the 90px tap target, ~135px on the target tablet), rest
+  horizontal band across the panel width (ADR-0001: 35 bubbles wrap to 3 rows in the 600×1024 browser
+  viewport and to 2 rows at 26 columns in the installed app's 900×1104 portrait, §16.3). Board stays
+  square and centred.
+- Party balloons are sized from the board area (`min(boardAreaW × 0.195, boardAreaH × 0.225)`, with
+  the 120px floor applied after the −6% jitter: ~135px at 1024×600 and ~163px at 1280×724), rest
   fully inside the painted board with 16px of space to the border plus the float amplitude, and a
   rotation recomputes both the size and the resting places (§10.1, issues #25, #32, #33).
 - `prefers-reduced-motion: reduce` → shorter, non-scaling animations; nothing becomes
@@ -586,10 +588,12 @@ plain fallback panel **without** `?debug=1` when it fails, and no startup call m
 feature-detect `crypto.getRandomValues`, `matchMedia`, `Element.prototype.animate` and
 `getAnimations({ subtree: true })`, and fall back to a static board when an engine lacks them.
 
-The browser and the installed app share one Chrome profile, so a standalone crash is observable
-from the browser: launch the app, let it die, then open `?debug=1` in the browser and read the
-`boot` row. That is the only way to see a standalone run without a screen, a console or adb
-(issue #23).
+The boot row is read where the run happened. `?debug=1` reports the runs of the tab it is opened
+in; the installed app is Firefox's PWA wrapper (ADR-0002), not a Chrome tab, so a Chrome debug
+session cannot read the wrapper's storage. There the plain fallback panel is the channel: it renders
+without `?debug=1` and shows the trace and the last error when boot fails. On the 2026-10-27 device
+pass the installed app was checked by eye, and the debug rows were read in Chrome 137 on the same
+tablet (§16.3).
 
 ---
 
@@ -600,9 +604,10 @@ from the browser: launch the app, let it die, then open `?debug=1` in the browse
 - **Vite + TypeScript (strict), no UI framework.**
 - DOM + CSS for the board (36 real elements, CSS transforms for motion), one `<canvas>`
   overlay for fireworks/particles.
-- **A local Vite plugin** (`scripts/offline.ts`) for the service worker: it builds `src/sw.ts` as a
-  plain script with the build's file list baked in (ADR-0003). `public/manifest.webmanifest` is a
-  static file, not generated.
+- **Two local Vite plugins.** `scripts/offline.ts` builds `src/sw.ts` as a plain script with the
+  build's file list baked in (ADR-0003); `scripts/tokens.ts` prepends the numbers the stylesheet
+  paints as a generated `:root` block (ADR-0004). `public/manifest.webmanifest` is a static file,
+  not generated.
 - **Vitest** for unit tests. Node script for the tuning simulator.
 - Later Android: wrap with **Capacitor** (no code changes expected).
 
@@ -610,21 +615,42 @@ from the browser: launch the app, let it die, then open `?debug=1` in the browse
 
 ```
 src/
-  main.ts                 // bootstrap, wires input -> core -> render
-  game/
-    types.ts              // Board, Goal, AnimalDef, SaveState, Rng
+  main.ts                 // composition root: input -> core -> render/save/audio
+  sw.ts                   // the hand-written service worker (ADR-0003)
+  swPolicy.ts             // the precache policy the worker and its tests share
+  game/                   // pure: no DOM, no timers, no Math.random
+    types.ts              // Board, Goal, LevelState, SaveState, Rng
     rng.ts                // seeded PRNG (mulberry32), injectable
-    animals.ts            // THE animal manifest (§12.2)
+    animalIds.ts          // the ids, without the SVG asset graph
+    animals.ts            // id -> face + pitch (§12.2)
     constants.ts          // every tunable number in ONE place (§21)
-    board.ts              // fill, groups, gravity, refill, dead-board, reshuffle (pure)
-    level.ts              // level params from level number, goals, generation (pure)
-    rules.ts              // resolveTap + level-complete + party math (pure)
-    save.ts               // localStorage load/save/versioning
+    board.ts              // fill, groups, gravity, refill, dead-board, reshuffle
+    highlight.ts          // which goal animals may carry the board glow (§8.1)
+    level.ts              // ramp, goals, generation, resume
+    rules.ts              // resolveTap, completion, party math
+    tapQueue.ts           // the FIFO tap queue (§7.5)
+    session.ts            // one level run: state, queue, party, next/reset
+    save.ts               // save shape and round-trip over the KeyValueStore seam
+    mute.ts               // mute state and the toggle rule
+    adultReset.ts         // the long-press reset state machine
+    sim.ts                // the headless player and its summaries (§16.2)
   ui/
-    boardView.ts          // renders tiles, tweened pops/falls
-    panelView.ts          // goal cards + bubble rack
-    celebration.ts        // fireworks canvas + balloons + ▶
-    layout.ts             // responsive sizing
+    boardView.ts          // tiles, pops, falls, wobble, reshuffle
+    panelView.ts          // level numeral, goal cards, bubble rack
+    celebration.ts        // balloons, particles, the play arrow
+    bunch.ts              // balloon placement inside the board
+    balloonColours.ts     // neighbour-aware balloon palette
+    frameTier.ts          // the 60/30fps degrade and recover decision
+    layout.ts             // responsive sizing and celebration geometry
+    timer.ts              // the module-owned timers the views clear
+    muteToggle.ts         // the mute control
+    adultReset.ts         // long-press pointer handling and the shake
+    pool.ts               // fixed-capacity object pool
+    shell.ts              // kid-proofing: no zoom, selection, context menu or gestures
+    capabilities.ts       // feature detection for APIs newer than Chrome 61
+    bootlog.ts            // the persisted boot trace
+    fallback.ts           // what renders when boot fails
+    storage.ts            // localStorage seam
     debug.ts              // ?debug=1 overlay
   audio/
     synth.ts              // WebAudio implementation of AudioPlayer
@@ -634,14 +660,16 @@ src/
 **Hard rule:** everything under `game/` is pure — no DOM, no timers, no `Math.random`, all
 randomness via injected `Rng`. This is what makes the simulator and tests possible.
 
-Public core surface (approximate):
+Public core surface:
 
 ```ts
 createLevel(level: number, sessionSeed: number, pool: readonly AnimalId[], rng?: Rng): LevelState
+createLevelSession(deps: SessionDeps): LevelSession   // one run: taps, queue, party, reset
 getGroups(board: Board, minSize?: number): Group[]
 resolveTap(state: LevelState, index: number, rng: Rng): TapResult  // outcome: 'invalid' | 'popped'
 isComplete(state: LevelState): boolean
 partySize(state: LevelState): Party   // { balloons, tier, pct }
+goalHighlightCells(board: Board, goals: readonly Goal[]): Set<number>
 ```
 
 ### PWA
@@ -706,7 +734,7 @@ taps, level duration estimate. Used to set §9.1 for real.
 **Acceptance**, each clause read on the run it describes:
 
 - greedy finishes comfortably ahead of random — ≥30% more bubbles on the **mean** run at levels
-  1–6 (measured 1.78x at the narrowest);
+  1–6 (the narrowest level measures 1.78× random's count);
 - `greedy` holds ≈50–65% of the rack on the mean run, asserted at the levels the ramp is sized
   against, 7–12 (measured 63/63/60/61/53/54%). Levels 1–6 measure above the band by design,
   because §9.1 funds them deliberately;
@@ -767,37 +795,42 @@ above is its device re-check.
 
 ## 17. Milestones
 
-**M0 — Platform proof (target: this week, ~1 hour).**
+M0–M4 have shipped and M5's ramp is locked; the acceptance lines are kept as the record. The
+human checks still open in §20 are the only unfinished milestone work.
+
+**M0 — Platform proof. Shipped.**
 Throwaway "hello" PWA deployed to the real URL, installed on the tablet, opened in airplane
 mode, landscape, no zoom/scroll. Includes the `?debug=1` overlay skeleton.
 *Accept:* every box in §16.3 checked on the device except the game-specific ones.
 *Kill criterion:* if PWA install fails on the device, switch to Capacitor APK **before**
-building the game.
+building the game. (It did, in a different way: Chrome's WebAPK shell cannot load here, so the
+install path is Firefox's PWA wrapper, ADR-0002.)
 
-**M1 — The fun test.**
+**M1 — The fun test. Shipped.**
 6×6 board, animal SVGs, tap-to-pop, gravity, refill, reshuffle, pop sounds, no goals, no
 bubbles, no celebration.
 *Accept:* she taps it for 60 seconds unprompted and doesn't ask what she's supposed to do.
-*This is the go/no-go on the whole mechanic.*
+*This is the go/no-go on the whole mechanic.* The 60-second check itself is still open (issue #6).
 
-**M2 — Goals, party meter, levels.**
+**M2 — Goals, party meter, levels. Shipped.**
 Goal cards and rings, bubble rack, level generator + ramp, mid-level state, reshape into the
 landscape layout.
 *Accept:* a level can be completed; parties vary with play efficiency; unit tests for §16.1
 green.
 
-**M3 — Celebration.**
+**M3 — Celebration. Shipped.**
 Fireworks overlay, balloons sized by party, fanfare/aww, pulsing ▶, next level.
 *Accept:* winning feels like a party; small party feels quiet but never sad; 60fps.
 
-**M4 — Hardening.**
+**M4 — Hardening. Shipped.**
 Full persistence + resume, mute toggle, kid-proofing, adult reset, debug overlay completion,
 portrait fallback, reduced-motion.
-*Accept:* full §16.3 checklist green.
+*Accept:* full §16.3 checklist green (2026-10-27 device pass).
 
-**M5 — Tuning.**
+**M5 — Tuning. Ramp shipped.**
 Run the simulator, replace §9.1 with real numbers, watch one real 5-minute session, adjust
-pacing/party slack/sound volume. Ship v1.
+pacing/party slack/sound volume. Ship v1. The ramp is locked (§9.1); what remains is the
+unsupervised session and the v1 tag (issue #22).
 
 ---
 
@@ -822,11 +855,11 @@ pacing/party slack/sound volume. Ship v1.
 |---|---|
 | Chrome frozen at 138 on Android 8.1 | Baseline locked to 138; M0 proves it on device before any game code |
 | PWA install unsupported / flaky on old WebView | Materialised in a different way than expected: the install itself works, but Chrome's WebAPK shell cannot load on Android 8.1, so the install path is Firefox's PWA wrapper (ADR-0002). Capacitor stays the fallback for a device with no working PWA shell |
-| Old GPU can't hold 60fps with fireworks | Particle pooling, DPR cap 2, automatic 30fps degrade tier — the tier does not engage on the tablet yet, because the meter never reaches its degrade threshold under mixed frame delivery (issue #29) |
+| Old GPU can't hold 60fps with fireworks | Particle pooling, DPR cap 2, automatic 30fps degrade tier. The 2026-10-27 pass measured 59.1fps in Chrome, and 24.4–29.6fps in Firefox where the tier correctly reads `30fps` (issues #12, #29) |
 | Mechanic isn't actually fun for her | M1 ships the bare loop first; pivot to merge-drop is a core rewrite, decide early |
 | Bubble rack grows to the measured 35 items and looks cluttered | 3–4 per row grid in landscape, the portrait band, sized to the panel; `partyPct` (ratio, not count) drives celebration intensity |
 | "Fewer taps" lesson is invisible | Rack drains on every tap with the same animation that becomes the balloons |
-| Art swap becomes a refactor | Single manifest `animals.ts`; stable ids; data-only change |
+| Art swap becomes a refactor | Two data files, `animalIds.ts` and `animals.ts`; stable ids; data-only change |
 
 ---
 
@@ -843,13 +876,13 @@ Settled for v1:
 - **A 9th animal** — no; 8 is already at the edge of silhouette distinctness.
 - **Twemoji credit** — the CC BY 4.0 attribution is a comment in `src/game/animals.ts` and in
   README.md's Credits, which is what the licence asks for.
+- **Device checklist** — green on 2026-10-27 (§16.3), and the frame rate under a full burst was
+  read there via `?debug=1` (issue #12), not in a unit test.
 
 Still open:
 
-- **One real unsupervised session** and the device checklist (§16.3, §18) — human/tablet checks,
-  tracked on issues #20 and #22.
-- **Frame rate under a full burst** (issue #12) — measured on the tablet via `?debug=1`, not in a
-  unit test.
+- **One real unsupervised session** and the 60-second fun test (§18) — human/tablet checks, tracked
+  on issues #22 and #6.
 
 ---
 

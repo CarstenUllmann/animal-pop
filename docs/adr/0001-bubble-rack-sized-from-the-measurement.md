@@ -31,3 +31,5 @@ that is 17 columns of 24 px bubbles, three rows inside the seven the panel row a
 reported shortfall. What the fit model cannot prove is readability: a band of 17 columns is less grid-like than
 the 3–4 per row block §8.2 was written around, so whether a rack reads as a block that visibly shrinks —
 rather than as a strip — is a device check on issue #20's checklist, not an assertion in `layout.test.ts`.
+That check came back green on the 2026-10-27 device pass (§16.3): the installed portrait rack is 26 columns
+of two rows inside the panel row, and no readability shortfall was recorded.

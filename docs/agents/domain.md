@@ -23,8 +23,8 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 /
 ├── GLOSSARY.md
 ├── docs/adr/
-│   ├── 0001-event-sourced-orders.md
-│   └── 0002-postgres-for-write-model.md
+│   ├── 0001-bubble-rack-sized-from-the-measurement.md
+│   └── 0002-firefox-pwa-wrapper-is-the-tablet-install-path.md
 └── src/
 ```
 
@@ -38,4 +38,4 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+> _Contradicts ADR-0001 (the rack is sized from the measurement), but worth reopening because…_

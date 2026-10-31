@@ -22,8 +22,10 @@ change it. We install the same URL through Firefox 158's PWA wrapper instead, an
 The effective engine is Gecko, not Chrome 61, so the Chrome 61 parse surface in `src/baseline.test.ts` and
 the `chrome61` build target are now a defensive floor rather than the engine the device runs: a
 Firefox-only incompatibility can pass CI and still fail on the tablet. The debug overlay's engine token
-only recognises Chromium, so it reads `unknown engine` inside the wrapper (§14.3), and `?debug=1` is not
-reachable as an installed launch because the launcher uses the manifest's start URL — the environment rows
-are read from a browser tab on the same origin. The install path is not something the app controls, so
+only recognised Chromium when this was written — issue #30 taught it to name Firefox too, so a trace taken
+inside the wrapper now reads `Firefox/158` (§14.3). `?debug=1` is not reachable as an installed launch
+because the launcher uses the manifest's start URL — the environment rows are read from a browser tab on
+the same origin, and a boot failure inside the wrapper is read through the plain fallback panel. The full
+checklist read green on 2026-10-27 (issue #20). The install path is not something the app controls, so
 §16.3's install row has to be re-checked on any new device rather than assumed, and the broken WebAPK
 should be uninstalled so the child does not get a crash icon next to the working one.

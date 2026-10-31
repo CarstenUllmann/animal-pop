@@ -3,17 +3,17 @@
 A tap-a-cluster animal-popping game for a young child, shipped as an offline-first PWA.
 The design spec is [`docs/SPEC.md`](docs/SPEC.md).
 
-**Status: M2/M3 — goals, the level ramp, the party and the wiring are in.** M1 (board,
+**Status: v1 feature-complete — the ramp is locked and M0–M4 have shipped.** M1 (board,
 tap-to-pop, gravity, refill, dead-board reshuffle, synthesised sound) is joined by goals and
 the bubble meter, the celebration with balloons and the play arrow, save/resume, mute, the adult
 long-press reset, the debug overlay, and the portrait and reduced-motion rules. The celebration was
 rebuilt in issue #24's four slices: bigger balloons hung as a bunch, a slow climb into an endless
 float, coloured fireworks with a three-burst opening, and a play arrow that waits for the last
-balloon. The ramp is locked to `npm run sim` output (issue #22). The device pass is underway on the target tablet
-and green so far for install, offline cold launch, rotation, resume and tap feedback, through Firefox's
-PWA wrapper (issue #23, ADR-0002). What is left is the rest of the device checklist — the kid-proofing row
-and the frame-tier meter (issue #29) — the 60-second fun test (issue #6), the unsupervised five-minute
-session (issue #22) and the v1 tag (issue #20).
+balloon. The ramp is locked to `npm run sim` output (issue #22). The device pass ran green across the
+whole checklist on the target tablet on 2026-10-27 — install, offline cold launch, rotation,
+kid-proofing, frame tier, tap feedback, resume (issue #20, SPEC §16.3) — through Firefox's
+PWA wrapper (issue #23, ADR-0002). What is left is two human checks: the 60-second fun test
+(issue #6) and the unsupervised five-minute session, which is what the v1 tag waits for (issue #22).
 
 ## Commands
 
@@ -44,11 +44,11 @@ No CDN, no web fonts, no runtime network requests: everything is bundled and the
 precaches the whole app. The worker is hand-written (`src/sw.ts`), and `scripts/offline.ts` builds it as
 a plain script with this build's file list baked in (ADR-0003).
 
-The Chrome 61 parse surface is still what the sources are held to, because the WebAPK shell Chrome mints
-for this origin cannot load on Android 8.1 — its `classes.dex` is DEX 039 while the platform loads at most
+The Chrome 61 parse surface is still what the sources are held to; `src/baseline.test.ts` keeps them
+from naming an API that surface never had, and it reads `dist/`, so it is only meaningful after a
+fresh `npm run build`. The install path is a separate fact: the WebAPK shell Chrome mints for this
+origin cannot load on Android 8.1 — its `classes.dex` is DEX 039 while the platform loads at most
 DEX 038 — so the app is installed through Firefox's PWA wrapper instead (issue #23, ADR-0002).
-`src/baseline.test.ts` keeps the shipped sources from naming an API that surface never had, and it reads
-`dist/`, so it is only meaningful after a fresh `npm run build`.
 
 ## How it plays
 
@@ -103,15 +103,18 @@ Open `?debug=1` (for example
 reports the session seed, whether the launch is `standalone` or `browser`, the system's `motion`
 setting, the board cell size, the animals in play, the rack, the goals still missing, the tap queue,
 the live balloon and particle counts, the frame tier, FPS, the viewport and the boot trace. The
-environment rows are what the device checklist reads: `display` and `cell` answer the install and
-90 CSS px questions (issues #23 and #10), `motion` answers the reduced-motion check (issue #19), and
-`viewport` follows a rotation. The
+environment rows are what the device checklist read: `display` and `cell` answered the install and
+90 CSS px questions (issues #23 and #10), `motion` answered the reduced-motion check (issue #19), and
+`viewport` followed a rotation — all green on the 2026-10-27 pass (issue #20, SPEC §16.3). The
 `fps` row averages the frames the browser actually delivers, and the frame tier is the celebration's
-own degrade/recover decision, measured on those same intervals — that is what issues #12 and #20
-record on the tablet. The
+own degrade/recover decision, measured on those same intervals — 59.1fps at the `60fps` tier in
+Chrome and `30fps` in Firefox, which is what issue #29 fixed and the pass recorded. The
 boot trace is the reason it matters on the tablet: a force-close leaves nothing but the persisted
-trace, and the browser and the installed app share one Chrome profile, so `?debug=1` in the
-browser shows what the standalone run recorded (issue #23).
+trace, and the row names whichever engine booted the run (issue #30). But `?debug=1` is not
+reachable as an installed launch — the launcher uses the manifest's start URL — so for the installed
+app the plain fallback panel is the channel: it renders without the query parameter and shows the
+trace and the last error when boot fails. The rows themselves were read from a Chrome tab on the
+same origin, which is where its storage lives (issue #23, ADR-0002, SPEC §14.3).
 
 Without the query parameter the overlay is not created and adds no listeners.
 
@@ -134,6 +137,9 @@ src/
     animalIds.ts       # the same ids without the .svg asset graph, for plain node
     board.ts           # groups, pop, gravity, refill, reshuffle
     rules.ts           # tap resolution, the rack, the party tier
+    session.ts         # one level run: state, tap queue, party flag; no DOM, no clock
+    tapQueue.ts        # rapid taps queued, not lost; an overflow tap costs nothing
+    highlight.ts       # the cells that may carry the goal glow
     level.ts           # the ramp and the generator
     save.ts            # save round-trip and resume
     mute.ts            # mute state, the rules behind the toggle
@@ -148,7 +154,10 @@ src/
     synth.ts           # Web Audio implementation
   ui/
     boardView.ts       # tiles, pops, falls, wobble, reshuffle animation
-    celebration.ts     # balloons, particles, the play arrow, the frame tier
+    celebration.ts     # balloons, particles, the play arrow
+    bunch.ts           # the placement rule: hang the bunch inside the board
+    balloonColours.ts  # the palette and the neighbour-aware picker
+    frameTier.ts       # the celebration's own degrade/recover decision
     panelView.ts       # the level numeral, goals and the meter
     layout.ts          # portrait and landscape fractions
     muteToggle.ts      # the mute control
@@ -159,12 +168,15 @@ src/
     bootlog.ts         # the persisted boot trace
     fallback.ts        # what renders when boot fails
     storage.ts         # localStorage seam
+    timer.ts           # delayed work as a seam, so schedulers do not reach for `window`
     debug.ts           # ?debug=1 overlay
+  sw.ts                # the hand-written service worker (ADR-0003)
+  swPolicy.ts          # its cache decisions, kept pure so they can be tested in node
   assets/animals/      # bundled SVGs
 public/icons/          # generated PWA icons + source SVG
 public/manifest.webmanifest  # the app manifest (static; nothing generates it)
 scripts/               # icon generator, the simulator reporter, the CSP check,
-                       # the offline-shell build plugin
+                       # the offline-shell build plugin, the build-time token generator (ADR-0004)
 ```
 
 ## Credits
