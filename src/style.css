@@ -1,7 +1,5 @@
-/* Shipped colours, and the properties `ui/layout.ts` measures. The numbers a module also works from are
-   not written here: `scripts/tokens.ts` generates them into a `:root` block at the top of this file
-   (ADR 0004), so there is one copy of each and `styles.test.ts` holds the stylesheet to the tokens rather
-   than to a hand-maintained mirror. What is left below is what has no constant behind it. */
+/* Colours, plus the properties `ui/layout.ts` measures. `scripts/tokens.ts` generates every numeric
+   token from its module constant, so this block holds only what has no constant behind it. */
 :root {
   --bg: #101426;
   --bg-deep: #090c18;
@@ -16,7 +14,7 @@
   /* The measured square the board is drawn at; 96 px is what a page without script paints. */
   --cell: 96px;
 
-  /* The per-balloon ±6% the module draws from the injected Rng (issue #25); `1` is the unscripted size. */
+  /* Per-balloon size jitter; `1` is the unscripted size. */
   --balloon-jitter: 1;
 
   font-family: ui-rounded, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
@@ -29,7 +27,7 @@
   box-sizing: border-box;
 }
 
-/* The celebration layer is hidden between levels, and `display: flex` would otherwise win. */
+/* `display: flex` on a panel would otherwise beat the browser's `[hidden]` rule. */
 [hidden] {
   display: none;
 }
@@ -48,8 +46,7 @@ html {
 }
 
 body {
-  /* Fixed so the Chrome UI can never introduce a scrollable page.
-     Plain top/right/bottom/left rather than `inset`, which Chrome 61 does not know. */
+  /* Fixed so the Chrome UI can never introduce a scrollable page. Longhands, because `inset` is Chrome 87. */
   position: fixed;
   top: 0;
   right: 0;
@@ -70,22 +67,19 @@ body {
   cursor: default;
 }
 
-/* The shell is the grid in `.game`, so this rule only sizes the root. It has to not set `display` here:
-   `#app` is more specific than `.game`, and a flex declaration on the id would beat the grid the game
-   needs. The fallback path is the same element without the `.game` class, where a plain block is fine. */
+/* Only size the root. `#app` outranks `.game`, so any `display` here would beat the game grid; the
+   fallback path is the same element without the class, where a plain block is what it wants. */
 #app {
   width: 100%;
   height: 100%;
 }
 
 /* ------------------------------------------------------------------ */
-/* Layout (SPEC §13)                                                   */
+/* Layout                                                              */
 /* ------------------------------------------------------------------ */
 
-/* SPEC §13 (issue #10): the panel is the left column in landscape and stacks above the board in
-   portrait (issue #19), with the board square and centred in the space that is left. The fractions come
-   from ui/layout.ts rather than from fixed pixels here, and the token block gives them the values a page
-   without script paints (ADR 0004). */
+/* Panel left in landscape, stacked above the board in portrait, with the board square and centred in
+   the rest. The fractions and their no-script defaults come from `ui/layout.ts`. */
 .game {
   display: grid;
   grid-template-columns: calc(var(--panel-width-fraction) * 100%) 1fr;
@@ -94,9 +88,8 @@ body {
   min-height: 0;
 }
 
-/* The party is an overlay over the board rather than a band below it, so the board stays visible under
-   the dim (SPEC §10, issue #12). That is also what makes the 90 CSS px cell reachable on a 600 CSS px
-   height: the board has the whole row, and the dim sits on top of it. */
+/* The party overlays the board instead of taking a band below it, which leaves the board the full
+   height it needs to reach a 90 CSS px cell on a 600 px screen. */
 .board-area {
   grid-row: 1;
   grid-column: 2;
@@ -172,8 +165,8 @@ body {
   -webkit-user-drag: none;
 }
 
-/* SPEC §8.1: a ring around a goal animal that sits in a legal group. No gold fill: the fill made
-   a cell read as a button, and the count of rings is the "how many" signal (issue #48). */
+/* A ring around a goal animal that sits in a legal group. The fill is deliberately absent: a cell with
+   one reads as a button, and the number of rings is the "how many" signal. */
 .tile--goal::before {
   box-shadow: inset 0 0 0 1.5px rgba(255, 209, 102, 0.55);
 }
@@ -248,15 +241,13 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
-/* Celebration layer (SPEC §13)                                        */
+/* Celebration layer                                                */
 /* ------------------------------------------------------------------ */
 
-/* SPEC §10.1 (issue #12): the party is an overlay over the board, which stays visible under it. The dim
-   is a scrim on the layer itself rather than a class on the board - `:has()` is Chrome 105, and the
-   celebration module has no board element to toggle. It works because the layer is mounted inside the
-   board area, which is the rect `ui/celebration.ts` measures, so the same element has to be resized on
-   rotation (issue #19). The game appends the board after the party, so the layer needs its own stacking
-   order to sit above it rather than under it. */
+/* The dim is a scrim on this layer rather than on the board: `:has()` is Chrome 105, and the
+   celebration has no handle on the board element. The layer is mounted inside the board area, the
+   rect `ui/celebration.ts` measures, so it is resized on rotation. The game appends the board after
+   the party, hence the stacking order. */
 .celebration {
   position: absolute;
   top: 0;
@@ -267,21 +258,17 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* SPEC §10.1 phase 3: the play arrow fades in bottom-centre. The balloons are absolute and sit above
-     it, so the arrow never lands on top of a balloon she is trying to pop. The band is the
-     `--arrow-band` token (LAYOUT.celebrationBottomPaddingPct), and the arrow's own 16 px clear of its box
-     is `LAYOUT.balloonMarginPx`: `ui/layout.ts` reads the same constants rather than declaring its own,
-     so the no-go line the placement rule refuses cannot drift from the band the arrow is painted in. */
+  /* The play arrow fades in bottom-centre, below the balloons' band, so it never lands on a balloon
+     she is trying to pop. `--arrow-band` and `LAYOUT.balloonMarginPx` come from the same constants
+     `ui/layout.ts` uses, so the placement rule's keep-out cannot drift from the painted band. */
   justify-content: flex-end;
   padding-bottom: var(--arrow-band);
   background: rgba(9, 12, 24, 0.35);
 }
 
-/* The layer is hidden between levels, but `[hidden]` and `.celebration` have the same specificity, so the
-   `display: flex` above beats the `[hidden]` rule at the top of the file and wins on order. The layer then
-   covers the whole board area - empty, but still a full-size box that takes every pointerdown - so the
-   board is visible and nothing on it is tappable. The layer owns its hidden state instead, which is the one
-   specificity that cannot lose to the rule above. */
+/* `[hidden]` and `.celebration` have equal specificity, so the `display: flex` above would win on
+   order and leave an invisible full-size box swallowing every tap. The layer owns its hidden state to
+   win that tie. */
 .celebration[hidden] {
   display: none;
 }
@@ -301,8 +288,7 @@ body {
   pointer-events: none;
 }
 
-/* The canvas `ui/celebration.ts` actually makes. The dim belongs to the celebration root, not to this
-   element, and the canvas cannot be tapped, so taps still reach the balloons. */
+/* The confetti canvas: never tappable, so taps still reach the balloons. */
 .particle-layer {
   position: absolute;
   top: 0;
@@ -314,9 +300,7 @@ body {
   pointer-events: none;
 }
 
-/* SPEC §10.2: the burst count is capped by PARTICLES in the core, and the tier the celebration
-   runs at decides the pool. `frameTier()` is internal to the module, so the tier only reaches CSS
-   when the game writes `data-tier` on the layer; until it does this rule is inert. */
+/* The celebration writes `data-tier` on the layer; until it does, this rule is inert. */
 [data-tier='30fps'] .particle-layer {
   opacity: 0.6;
 }
@@ -327,19 +311,13 @@ body {
   align-items: center;
 }
 
-/* SPEC §10.1 phase 2 (issue #25): the balloons are the payoff, so they are sized from
-   `--balloon-px` (written by ui/layout.ts from the measured board area) rather than a fingertip-sized
-   44px. `--balloon-ratio` is the height over width from LAYOUT.balloonHeightRatio, and the floor lives in
-   the module because `clamp()` is newer than the engine. `--balloon-jitter` is the per-balloon ±6% the
-   module draws from the injected Rng. The layer places them with `left`/`bottom`, so they are positioned
-   rather than flowed: `gap` is newer than the engine, and since issue #32 the spacing does not come from a
-   margin box either - the centres are placed by `ui/bunch.ts`, and `LAYOUT.balloonMarginPx` is the keep-out
-   from the board border.
+/* Sized from `--balloon-px`, written by `ui/layout.ts` from the measured board area, not from a
+   fingertip-sized 44px. `--balloon-ratio` is LAYOUT.balloonHeightRatio; the floor lives in the module
+   because `clamp()` is newer than the engine. Balloons are placed with `left`/`bottom` rather than
+   flowed: `gap` is newer, and the spacing comes from `ui/bunch.ts`, not a margin box.
 
-   Issue #26: the rise is an animation on the button, so the hit box travels with the balloon and a
-   moving balloon can be tapped. `backwards`, not `both`: the fill only has to hide the balloon until
-   its stagger arrives, and a forwards fill would beat the shape's pop transform. The easing and length
-   are the tokens `CELEBRATION.balloonRiseMs`/`balloonRiseEase` emit (ADR 0004). */
+   The rise animates the button, so the hit box travels with the balloon. `backwards`, not `both`: a
+   forwards fill would beat the shape's pop transform. */
 .balloon {
   position: absolute;
   bottom: var(--balloon-band);
@@ -353,10 +331,9 @@ body {
   animation: balloon-rise var(--balloon-rise-ms) var(--balloon-rise-ease) backwards;
 }
 
-/* One transform owner per element (issue #25): the button owns the rise, this span owns the endless
-   sway/bob, and `.balloon__shape` owns the pop (`--balloon-collapse-ms`, 180ms). Chrome 61 has no individual transform
-   properties, so the sway and the bob share one keyframe set: one sway cycle, two bob cycles. The six
-   and a half seconds is the midpoint of `CELEBRATION.balloonFloatMsMin`/`Max`, emitted as a token. */
+/* One transform owner each: the button owns the rise, this span the endless sway and bob, and
+   `.balloon__shape` the pop. Chrome 61 has no individual transform properties, so sway and bob share
+   one keyframe set: one sway cycle, two bob cycles. */
 .balloon__float {
   display: block;
   width: 100%;
@@ -364,12 +341,9 @@ body {
   animation: balloon-float var(--balloon-float-ms) ease-in-out infinite;
 }
 
-/* The pop is a transition, not a second animation, because the inline delay the module sets for the
-   stagger would otherwise delay the pop as well. A tapped balloon pops at once.
-   Issue #35: the pop is a collapse to nothing, not a shrink that leaves a stub. The shape owns transform
-   and opacity, `CELEBRATION.balloonCollapseMs` is how long the collapse takes - emitted as
-   `--balloon-collapse-ms` - and the module removes the element when it ends, on a timer it owns, never a
-   `transitionend` listener. */
+/* A transition rather than a second animation: an animation would inherit the inline stagger delay,
+   so a tapped balloon would not pop at once. The module removes the element on its own timer, never
+   on `transitionend`. */
 .balloon__shape {
   display: block;
   width: 100%;
@@ -377,10 +351,8 @@ body {
   transition: transform var(--balloon-collapse-ms) ease-out, opacity var(--balloon-collapse-ms) ease-out;
 }
 
-/* Issue #35: the hit box goes with the balloon. `styles.test.ts` used to assert that `.balloon--popped` had
-   no rule of its own, and that assertion is what locked the poppable stub in - she tapped the same balloon
-   over and over because the stub still took the tap. While a balloon is collapsing it takes none, so the
-   tap lands on the balloon underneath it. */
+/* A collapsing balloon takes no taps, so the tap lands on the balloon underneath it instead of on a
+   shrinking stub. */
 .balloon--popped {
   pointer-events: none;
 }
@@ -397,9 +369,7 @@ body {
   fill: currentColor;
 }
 
-/* Issue #49: a thin near-black outline on every body, so overlapping balloons keep a visible edge even
-   when their fills are close in tone. The body still fills from `currentColor`; the string below stays a
-   thin coloured line with no outline of its own. */
+/* A thin near-black outline keeps overlapping bodies readable when their fills are close in tone. */
 .balloon__svg ellipse {
   stroke: #0a0d16;
   stroke-width: 0.9;
@@ -425,9 +395,8 @@ body {
   }
 }
 
-/* Issue #26: ±7px sway over one cycle and ±8px bob over two, so the two periods are 6-7s and 3-3.5s
-   and the path never resolves into a circle. The module sets the duration, phase and direction per
-   balloon from the injected Rng. */
+/* Sway over one cycle and bob over two, so the two periods differ and the path never closes into a
+   circle. The module sets duration, phase and direction per balloon. */
 @keyframes balloon-float {
   0% {
     transform: translate(0, 0);
@@ -458,12 +427,10 @@ body {
   }
 }
 
-/* The play arrow, SPEC §10.1 (issue #13): it appears once the last balloon has settled (issue #28), and
-   the pulse is an adult-visible affordance, so reduced motion keeps the arrow still. The delay is the
-   custom property the module writes inline per party from the rise and the stagger; the `:root` value is
-   `CELEBRATION.playButtonDelayMs`, emitted as a token for the no-JS path. The arrow is in the DOM from the
-   moment the party starts, and `next--ready` is the step that both shows it and lets it be hit, so it is
-   tappable the instant it is visible. */
+/* The arrow is in the DOM from the start of the party and `next--ready` both shows it and makes it
+   hittable, so it is tappable the instant it is visible. The delay is written inline per party from
+   the rise and the stagger; the `:root` value covers the no-script path. The pulse is an adult-only
+   affordance, so reduced motion keeps the arrow still. */
 .next {
   position: relative;
   width: var(--play-px);
@@ -491,8 +458,7 @@ body {
   fill: currentColor;
 }
 
-/* The ready class is what the module adds when the fanfare has run, so the fade-in must not inherit the
-   delay again. Visibility and hit-testing change in the same step (issue #13). */
+/* Visibility and hit-testing change together, and the fade must not wait out its delay again. */
 .next--ready {
   opacity: 1;
   pointer-events: auto;
@@ -507,12 +473,11 @@ body {
 
 
 /* ------------------------------------------------------------------ */
-/* Panel (SPEC §13)                                                    */
+/* Panel                                                              */
 /* ------------------------------------------------------------------ */
 
-/* SPEC §13 (issue #10): the panel is the left column in landscape and the top row in portrait, and it
-   never scrolls - the rack wraps inside it instead of pushing anything off screen. The sizes come from
-   ui/layout.ts and the token block, not from fixed pixels here. */
+/* The level column in landscape, the top row in portrait. It never scrolls: the rack wraps inside it
+   instead of pushing anything off screen. Sizes come from `ui/layout.ts`. */
 .panel {
   grid-row: 1;
   grid-column: 1;
@@ -522,18 +487,16 @@ body {
   flex-direction: column;
   align-items: flex-start;
   min-height: 0;
-  /* Issue #10: "never scrolls" has to be enforced rather than intended. A flex item's minimum size is its
-     content, so a rack taller than the panel's share grows the panel row and pushes the board out of its
-     own; clipping is what keeps the shell the size `ui/layout.ts` gave it. `min-height: 0` above is the
-     other half of the same rule. */
+  /* A flex item's minimum size is its content, so a taller rack would grow the panel row and push the
+     board out of its own. Clipping enforces "never scrolls"; `min-height: 0` is the other half. */
   overflow: hidden;
   padding: var(--chrome-panel-padding) var(--chrome-panel-padding-x);
   background: var(--panel);
   border-right: 1px solid rgba(123, 223, 242, 0.2);
 }
 
-/* SPEC §13: the level label has a reserved place at least as wide as the smallest tap target, and it is
-   also the long-press target, so nothing else may sit on top of it. */
+/* Reserved at least as wide as the smallest tap target: it is also the long-press target, so nothing
+   may sit on top of it. */
 .panel__level {
   display: flex;
   flex-direction: column;
@@ -543,7 +506,7 @@ body {
   cursor: pointer;
 }
 
-/* SPEC §13/§14.2: numerals are 40-56 CSS px and the level label is the long-press target. */
+/* Numerals are 40-56 CSS px; the label is the long-press target. */
 .panel__level-value {
   font-size: var(--level-px);
   line-height: 1.1;
@@ -558,8 +521,7 @@ body {
   color: var(--muted);
 }
 
-/* Issue #19: in portrait the two goal cards sit side by side, so they are flowed rather than stacked, and
-   they wrap when the panel is narrower than both cards. */
+/* In portrait the two goal cards sit side by side; they wrap when the panel is narrower than both. */
 .panel__goals {
   display: flex;
   flex-wrap: wrap;
@@ -609,8 +571,7 @@ body {
   object-fit: contain;
 }
 
-/* The ring is what she reads; the numeral is the adult backup (SPEC §8.1). Its size comes from
-   ui/layout.ts, which scales it with the cell inside the bounds SPEC §13 gives. */
+/* The ring is what she reads; the numeral is the adult backup, scaled by `ui/layout.ts` with the cell. */
 .goal__numeral {
   font-size: var(--goal-px);
   font-weight: 700;
@@ -627,19 +588,15 @@ body {
   color: var(--yellow);
 }
 
-/* SPEC §13/§8.1 (issue #8): the rack shows the level's whole starting size, so a spent bubble reads as a
-   gap. It is a wrapping grid rather than one row: the rack is 35 bubbles (SPEC §9.1, measured by the
-   simulator), which no panel that must not scroll can show in a single row. Issue #19's "two lines"
-   is what the early levels look like, not what level 11 is. The column count comes from the layout module:
-   3-4 in landscape, and in portrait the horizontal band §13 describes (ADR-0001), which is why the
-   `--rack-columns` token default is not the number the game runs with. */
+/* The rack shows the level's whole starting size, so a spent bubble reads as a gap. It wraps because
+   the top level's 35 bubbles do not fit one row in a panel that must not scroll. `--rack-columns`
+   comes from the layout module: 3-4 in landscape, a horizontal band in portrait. */
 .rack {
   display: grid;
   grid-template-columns: repeat(var(--rack-columns), var(--bubble-px));
   align-self: stretch;
-  /* Issue #10: the rack reserves a place inside the panel, and what does not fit is clipped there rather
-     than scrolled or pushed onto the board. The 64 px is the block's place - a bubble stays inside
-     SPEC §8.2's 22-26 px, so the block shrinks to its rows while the place it reserved does not. */
+  /* The rack reserves a place inside the panel and clips whatever does not fit. The 64 px is the
+     block's place; the bubbles shrink to their rows inside it. */
   min-height: var(--tap-min-px);
   overflow: hidden;
   padding: var(--chrome-rack-padding) var(--chrome-rack-padding-x);
@@ -664,8 +621,8 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
-/* Issue #8.2: the bubble that has just been spent sparkles in the same frame as the pop it pays for,
-   because the game renders the panel before it animates the pop. Then it stays a gap. */
+/* The bubble just spent sparkles in the same frame as the pop it pays for, because the panel renders
+   before the pop animates. Then it stays a gap. */
 .rack__bubble--just-spent {
   animation: bubble-pop 260ms ease-out;
 }
@@ -722,11 +679,9 @@ body {
   }
 }
 
-/* SPEC §11 (issue #17): the mute toggle is the only chrome on screen with no text, so the icon carries the
-   state on its own and `aria-pressed` carries the same fact for a screen reader. It is a 64 CSS px target
-   in the panel's top-right corner, which is the one place it can never overlap the board (issue #17.5):
-   the panel is a column in landscape and a row above the board in portrait, so the corner is always the
-   panel's own, never the board's. */
+/* The only chrome with no text: the icon carries the state, and `aria-pressed` carries the same fact
+   for a screen reader. It sits in the panel's top-right corner — a column in landscape, a row above
+   the board in portrait — so it can never overlap the board. */
 .mute {
   position: absolute;
   top: 0.5rem;
@@ -755,8 +710,8 @@ body {
   stroke-linecap: round;
 }
 
-/* Sound on shows the waves, sound off shows the cross. Both are in the icon, and CSS picks one
-   from `aria-pressed`, so the picture and the accessible state cannot disagree (SPEC §11). */
+/* Both glyphs are in the icon; CSS picks one from `aria-pressed`, so picture and accessible state
+   cannot disagree. */
 .mute__cross {
   display: none;
 }
@@ -771,10 +726,9 @@ body {
   display: inline;
 }
 
-/* SPEC §14.2 (issue #16): the level numeral is the long-press target. There is no visible button
-   and nothing to read (SPEC §1), so the only affordance is the half-second shake on press and the
-   icon that appears after three seconds. Reduced motion keeps the icon and drops the shake
-   (SPEC §13). */
+/* The level numeral is the long-press target. There is no visible button, so the only affordances are
+   the half-second shake and the confirm icon that follows. Reduced motion keeps the icon, drops the
+   shake. */
 .panel__level-value.panel__level--shaking {
   animation: level-shake var(--shake-ms) ease-in-out;
 }
@@ -798,8 +752,8 @@ body {
   }
 }
 
-/* The confirm icon. `hidden` is what keeps it invisible until the confirm step opens, so nothing
-   here may set `display` - the `[hidden]` rule at the top of the file would be overridden. */
+/* `hidden` keeps the icon invisible, so nothing here may set `display`: it would override the
+   `[hidden]` rule at the top of the file. */
 .adult-confirm {
   color: var(--pink);
   font-size: 1.1rem;
@@ -815,10 +769,9 @@ body {
 /* Portrait fallback                                                   */
 /* ------------------------------------------------------------------ */
 
-/* ui/layout.ts puts the orientation and the too-small flag on the app element, which is the game root, so
-   these selectors have to be written against it rather than against body. In portrait the panel is the row
-   above the board and the board stays square in what is left, which is the placement the fractions already
-   describe (issue #19); the celebration is an overlay over the board in both orientations. */
+/* `ui/layout.ts` puts orientation and the too-small flag on the app root, so these selectors target it
+   rather than `body`. In portrait the panel becomes the row above the board; the celebration stays an
+   overlay in both orientations. */
 .game.is-portrait .board-area {
   grid-row: 2;
   grid-column: 1;
@@ -829,8 +782,7 @@ body {
   border-bottom: 1px solid rgba(123, 223, 242, 0.2);
 }
 
-/* SPEC §13: the target tablet is landscape 1024x600, so a cell below the tap target
-   means the device is smaller than the spec assumes. Show nothing dramatic - just flag it. */
+/* A cell below the tap target means the device is smaller than the designed tablet. Flag it quietly. */
 .game[data-tap-target='too-small'] .panel::after {
   content: 'small screen';
   font-size: 0.6rem;
@@ -840,12 +792,11 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
-/* Reduced motion (SPEC §13, §14)                                      */
+/* Reduced motion                                                    */
 /* ------------------------------------------------------------------ */
 
 @media (prefers-reduced-motion: reduce) {
-  /* The progress ring's own transition. `.ring__arc` is a name the panel never produces: the ring the
-     game draws is `.goal__ring-fill` in ui/panelView.ts, so this is the selector that actually fires. */
+  /* The progress ring and the tile transitions. */
   .tile__face,
   .tile::before,
   .goal__ring-fill {
@@ -864,9 +815,7 @@ body {
     animation: none;
   }
 
-  /* SPEC §13/§14: single frames. A balloon is drawn already in place and the pop is one frame
-     rather than a travel, the confetti layer is not shown at all, and the long-press shake is
-     dropped while the confirm icon stays. */
+  /* Single frames: balloons appear in place, the pop is one frame, no confetti, no shake. */
   .balloon,
   .panel__level--shaking {
     animation: none;
@@ -877,8 +826,7 @@ body {
     transition: none;
   }
 
-  /* The rack sparkle is a ring that travels outward, so reduced motion drops the ring and keeps the fact:
-     the spent bubble stays a gap, which is the visual twin of the bubble tick (SPEC section 11). */
+  /* Keep the fact, drop the travelling ring: the spent bubble stays a gap. */
   .rack__bubble--just-spent,
   .rack__bubble--just-spent::after {
     animation: none;
@@ -1028,9 +976,8 @@ body {
   display: none;
 }
 
-/* Plain fallback panel - issue #23. It has to render without `?debug=1`, on a device where
-   the game itself never started, so it stays as simple as possible. Chrome 61 syntax only:
-   no CSS custom properties, no clamp, no gradients, no animation. */
+/* The plain fallback panel, rendered without `?debug=1` when the game could not start. Chrome 61
+   syntax only: no custom properties, no clamp, no gradients, no animation. */
 .fallback {
   /* The root still carries `.game`, so the message spans the whole grid rather than the panel column. */
   grid-column: 1 / -1;
@@ -1072,28 +1019,27 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
-/* Debug rows read at tablet distance (SPEC §13, §14.3, issue #18)    */
+/* Debug rows read at tablet distance                             */
 /* ------------------------------------------------------------------ */
 
-/* The overlay is read from across the room on the tablet, not from arm's length, so the rows carry
-   their own explicit numbers instead of inheriting the small base `.debug` sets. These rules are
-   appended after every existing rule and change nothing earlier; the descendant combinator is what
-   makes them win. The numbers stay plain pixels because `clamp()` is Chrome 79 and the engine baseline
-   in SPEC §2 forbids it here, and a `rem` size would just re-inherit the base being replaced. */
+/* Read from across the room, not at arm's length, so the rows carry explicit sizes instead of
+   inheriting the small base `.debug` sets. Appended last and scoped with a descendant combinator, so
+   nothing earlier changes. Sizes stay in pixels: `clamp()` is Chrome 79, and a `rem` would re-inherit
+   the base being replaced. */
 .debug .debug__rows .debug__value {
   font-size: 22px;
   line-height: 1.4;
 }
 
-/* SPEC §13 sizes the numerals she reads at 40-56px; the labels are the smaller line that names the
-   number, and the value is what an adult reads from the doorway. */
+/* The numeral she reads is large; the label is the smaller line naming it, and the value is what an
+   adult reads from the doorway. */
 .debug .debug__rows .debug__label {
   font-size: 14px;
   line-height: 1.4;
 }
 
-/* The last error is the row the overlay is opened for, so it reads at the same size as the values.
-   `ui/debug.ts` deliberately does not truncate it, which is why the row needs room for a line. */
+/* The error is why the overlay is opened, so it reads at value size; `ui/debug.ts` does not truncate
+   it, which is why the row needs room for a line. */
 .debug .debug__error-value {
   font-size: 22px;
   line-height: 1.4;
@@ -1104,9 +1050,8 @@ body {
   line-height: 1.4;
 }
 
-/* The trace is the one row that is a list of lines rather than a single glance, and the panel is capped
-   at the tablet's height, so it keeps a smaller size: at the row size a whole boot trace pushes the
-   numbers off screen, and the values are what has to be readable without scrolling. */
+/* The trace is a list rather than a glance, and the panel is capped at the tablet's height, so it
+   keeps a smaller size; at row size a whole boot trace pushes the numbers off screen. */
 .debug .debug__rows .debug__value--trace {
   font-size: 15px;
   line-height: 1.4;

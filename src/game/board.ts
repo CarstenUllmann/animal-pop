@@ -13,7 +13,7 @@ export function indexOf(row: number, col: number): number {
   return row * GRID + col
 }
 
-/** Orthogonal neighbours only — diagonals never connect (SPEC §6). */
+/** Orthogonal neighbours only; diagonals never connect. */
 export function neighbours(index: number): number[] {
   const row = rowOf(index)
   const col = colOf(index)
@@ -30,15 +30,12 @@ export function fillBoard(pool: readonly AnimalId[], rng: Rng): Board {
   return Array.from({ length: BOARD_SIZE }, () => rng.pick(pool))
 }
 
-/** A full random board that is guaranteed to have at least one legal tap. */
+/** A full random board with at least one legal tap. */
 export function createBoard(pool: readonly AnimalId[], rng: Rng): Board {
   return ensureGroup(fillBoard(pool, rng), pool, rng, MIN_GROUP)
 }
 
-/**
- * The maximal connected same-animal group at `index`, of any size. Returns null for
- * an empty cell. Legal taps require MIN_GROUP cells (see `legalGroupAt`).
- */
+/** The maximal same-animal group at `index`, of any size; null for an empty cell. */
 export function groupAt(board: Board, index: number): Group | null {
   const animal = board[index]
   if (animal === null || animal === undefined) return null
@@ -62,6 +59,7 @@ export function groupAt(board: Board, index: number): Group | null {
   return { animal, cells }
 }
 
+/** The group at `index` when it is big enough to tap. */
 export function legalGroupAt(board: Board, index: number): Group | null {
   const group = groupAt(board, index)
   return group !== null && group.cells.length >= MIN_GROUP ? group : null
@@ -96,11 +94,8 @@ export function deadBoard(board: Board): boolean {
 }
 
 /**
- * Pop a legal group, then apply gravity and refill (SPEC §7.1, §7.3).
- *
- * The returned `moves` describe the settle for the view: one entry per destination
- * cell, with the source cell it fell from (or null for a fresh refill). Pure: the
- * input board is never mutated, and no cascades are triggered.
+ * Pop a group, then apply gravity and refill. `moves` describe every destination cell, with the
+ * source it fell from or null for a refill. Pure: no mutation, no cascades.
  */
 export function popGroup(
   board: Board,
@@ -118,15 +113,15 @@ export function popGroup(
   const moves: TileMove[] = []
 
   for (let col = 0; col < GRID; col++) {
-    // Survivors bottom-up, so assigning them bottom-up preserves their order.
+    // Bottom-up, so assigning them bottom-up preserves their order.
     const survivors: Array<{ animal: AnimalId; row: number }> = []
     for (let row = GRID - 1; row >= 0; row--) {
       const animal = working[indexOf(row, col)]
       if (animal !== null && animal !== undefined) survivors.push({ animal, row })
     }
 
-    const newCount = GRID - survivors.length
-    for (let row = 0; row < newCount; row++) {
+    const refillCount = GRID - survivors.length
+    for (let row = 0; row < refillCount; row++) {
       const animal = rng.pick(refillPool)
       const to = indexOf(row, col)
       next[to] = animal
@@ -144,15 +139,12 @@ export function popGroup(
   return { board: next, cleared, moves, animal: group.animal, count: cleared.length }
 }
 
-/**
- * A fresh board with no dead end: it always contains a run of `RESHUFFLE_MIN_GROUP`
- * (SPEC §7.4). The run is planted if random fill did not produce one.
- */
+/** A fresh board guaranteed to contain a group of `RESHUFFLE_MIN_GROUP`. */
 export function reshuffleBoard(pool: readonly AnimalId[], rng: Rng): Board {
   return ensureGroup(fillBoard(pool, rng), pool, rng, RESHUFFLE_MIN_GROUP)
 }
 
-/** Replace the board with a random one if it has no group of `minSize`. */
+/** Return `board` when it holds a group of `minSize`, otherwise plant one. */
 export function ensureGroup(
   board: Board,
   pool: readonly AnimalId[],
@@ -163,7 +155,7 @@ export function ensureGroup(
   return plantGroup(board, pool, rng, Math.min(minSize, GRID))
 }
 
-/** Writes one contiguous horizontal or vertical run of `size` into a copy. */
+/** Write one contiguous horizontal or vertical run into a copy of the board. */
 function plantGroup(board: Board, pool: readonly AnimalId[], rng: Rng, size: number): Board {
   const copy = board.slice()
   const animal = rng.pick(pool)

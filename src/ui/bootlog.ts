@@ -1,19 +1,10 @@
-/**
- * Boot trace — issue #23.
- *
- * A force-close on the tablet leaves nothing behind: there is no console in standalone
- * mode, and the process is killed before anything renders. So the boot path records a
- * timestamped trace that survives into the next launch, and `debug.ts` shows it.
- *
- * Everything here is pure with injected dependencies (no browser, no real `localStorage`)
- * so it can be tested in the node environment, and every storage call is guarded:
- * Android WebView can deny `localStorage` outright, and a force-close can leave a half
- * written value behind. See SPEC §14.1 — the save key stays reserved, so the trace has
- * its own key.
- */
-
 import type { KeyValueStore } from '../game/types'
 import { localStorageStore } from './storage'
+
+/**
+ * A timestamped trace of the boot path, persisted so it survives a force-close into the next launch.
+ * All storage calls are guarded: Android WebView can deny `localStorage` outright.
+ */
 
 export const STORAGE_KEY = 'pop-pals.boot.v1'
 
@@ -35,7 +26,6 @@ export interface BootRun {
   lastError: string | null
 }
 
-/** The storage the trace is persisted behind; the save in §14.1 uses the same shape. */
 export type BootStorage = KeyValueStore
 
 export interface Clock {
@@ -51,7 +41,7 @@ export interface BootLogOptions {
 export interface BootLog {
   /** Previous launch's persisted trace, or null when nothing survived. */
   previous(): BootRun | null
-  /** This launch's trace as recorded so far. */
+  /** This launch's trace so far. */
   current(): BootRun
   step(name: string): void
   error(message: string): void
@@ -75,7 +65,6 @@ export function createBootLog(options: BootLogOptions = {}): BootLog {
     try {
       return storage.write(STORAGE_KEY, JSON.stringify(run))
     } catch (unused) {
-      // Storage can refuse at any time; the trace is then only visible on screen.
       return false
     }
   }
@@ -140,10 +129,7 @@ export function describeError(value: unknown): string {
   }
 }
 
-/**
- * Read the previous run. A half-written or invalid value from a killed process is not
- * an error: it is what a force-close looks like from the outside.
- */
+/** A half-written or invalid value is what a force-close looks like, not an error to report. */
 function readRun(storage: BootStorage): BootRun | null {
   let raw: string | null
   try {
@@ -166,7 +152,7 @@ function readRun(storage: BootStorage): BootRun | null {
 
   const steps = Array.isArray(record.steps) ? record.steps : []
   const valid: BootStep[] = []
-  // No `flatMap`: `Array.prototype.flatMap` is Chrome 69, newer than the WebView engine.
+  // No `flatMap`: it is Chrome 69, newer than the WebView engine.
   for (const step of steps) {
     if (typeof step !== 'object' || step === null) continue
     const entry = step as Record<string, unknown>
@@ -180,5 +166,3 @@ function readRun(storage: BootStorage): BootRun | null {
     lastError: typeof record.lastError === 'string' ? record.lastError : null,
   }
 }
-
-

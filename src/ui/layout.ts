@@ -12,91 +12,57 @@ export interface GridSize {
 }
 
 export interface LayoutMetrics {
-  /** The viewport the layout was computed for, which the overlay reports as the device measurement. */
   viewportWidth: number
   viewportHeight: number
-  /** Panel column share of the width in landscape (SPEC §13). */
+  /** Panel share of the width in landscape. */
   panelWidthFraction: number
-  /** Panel row share of the height in portrait, where the panel stacks above the board. */
+  /** Panel share of the height in portrait, where the panel sits above the board. */
   panelHeightFraction: number
-  /** Board share of the height. */
   boardFraction: number
   /** Cell size in CSS px. */
   cell: number
-  /** Numerals scale with the cell, inside the bounds SPEC §13 gives. */
   levelPx: number
   goalPx: number
-  /** Rack bubble size and how many fit a row (SPEC §8.2). */
+  /** Rack bubble size and how many fit a row. */
   bubblePx: number
-  /**
-   * Columns the rack lays out: 3-4 in landscape (SPEC §13), and as many as the panel width allows in
-   * portrait, where §13 makes the rack a horizontal band across the panel.
-   */
   rackColumns: number
-  /** The play arrow, which is a tap target (SPEC §10.1, §13). */
+  /** The play arrow, which is a tap target. */
   playPx: number
-  /** The party balloon size, from the measured board area, floored so every jittered balloon clears the floor (SPEC §10.1, issue #25). */
+  /** Party balloon size, floored so every jittered balloon clears the tap target. */
   balloonPx: number
-  /**
-   * Issue #32: the painted board's offset inside the overlay, not the overlay's size. The celebration is
-   * `.board-area`'s padding box and the board is centred inside it, so "a position inside the board" cannot
-   * be read as a percentage of the overlay - on the target tablet the board starts 89 CSS px across and
-   * 30 CSS px up from the overlay's origin. `ui/bunch.ts` places centres against these, and the celebration
-   * turns a place into inline px by adding them back.
-   */
+  /** The painted board's offset inside the overlay, not the overlay's size. */
   boardOffsetXPx: number
   boardOffsetYPx: number
-  /**
-   * The top of the play arrow's no-go band, measured up from the board's bottom edge: the padding band the
-   * arrow sits in, the arrow's own box, and `balloonMarginPx` clear of it (SPEC §10.1, *The arrow*). It is
-   * the number the placement rule refuses, so a balloon can never land on the button she uses to move on.
-   */
+  /** Top of the play arrow's no-go band, measured up from the board's bottom edge. */
   arrowBandPx: number
-  /** Whether `MAX_BALLOONS` fit at the target spacing inside the keep-out. Reported the way `boardFitsArea` is. */
+  /** Whether twelve balloons fit at the target spacing inside the keep-out. */
   bunchFitsBoard: boolean
-  /** The box reserved for every interactive element no larger than this (SPEC §13). */
+  /** The floor for every interactive element. */
   interactivePx: number
-  /** Portrait layout: the panel stacks above the board. */
   portrait: boolean
-  /** The smallest tappable element is too small for this viewport. */
   tapTargetTooSmall: boolean
-  /**
-   * Issue #10: the panel has to show everything at once, so the fit is a number the module can be held to
-   * rather than a claim in a comment. The panel row inside its padding is what the level label's reserved
-   * place, the two goal cards and the wrapped rack have to share, and nothing there scrolls.
-   */
-  /** The panel column and row, and the panel row inside its own padding. */
+  /** The panel column, its row, and the row inside its padding. */
   panelColumnPx: number
   panelRowPx: number
   panelContentPx: number
-  /** What the level label and the two goal cards take before the rack is allowed any. */
+  /** What the level label and goal cards take before the rack is allowed any. */
   panelChromePx: number
-  /** The rack the fit is sized for (ADR 0001: the measured 35), the wrapped rows it needs, and whether they fit at once. */
+  /** The rack the fit is sized for, the rows it wraps to, and how many rows fit. */
   rackBubbles: number
   rackRows: number
   rackRowsFit: number
-  /** The rack box at `rackBubbles`, row spacing charged on every row as the stylesheet charges it. */
   rackHeightPx: number
-  /** The whole rack is visible at once. A rack that does not fit is clipped, never scrolled. */
   rackFitsPanel: boolean
-  /** The board box (square, SPEC §13) against the area the fractions give it. */
+  /** The square board against the area the fractions give it. */
   boardPx: number
   boardFitsArea: boolean
-  /** Shares of the page area: the board is the half she plays on, so it has to be the bigger one. */
   boardAreaFraction: number
   panelAreaFraction: number
 }
 
 /**
- * SPEC §13: the panel is the left column in landscape and stacks above the board in portrait, the
- * board stays square and centred in the space that is left, numerals scale with the cell, every tap
- * target is at least 48 device px (90 CSS px on the target tablet), and nothing interactive is
- * smaller than 64 CSS px. Everything is derived from the viewport rather than a fixed pixel layout,
- * so it survives the target device's 1.41 aspect ratio and Chrome UI resizing.
- *
- * The celebration is not a share of the page here: it is an overlay over the board (SPEC §10), which
- * is what makes the 90 CSS px cell reachable on the target device's 600 CSS px height - six rows of
- * 90 need 540, and a band for the party is what made those two clauses contradict each other.
+ * Everything is derived from the viewport: the panel is a column in landscape and a row in portrait,
+ * the board stays square in what is left, and every tap target keeps its floor.
  */
 export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics {
   const portrait = viewport.height > viewport.width
@@ -107,39 +73,28 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   const panelColumnPx = Math.round(viewport.width * panelWidthFraction)
   const panelRowPx = Math.round(viewport.height * panelHeightFraction)
 
-  // The board is sized from the space the panel leaves it, less the padding `.board-area` centres it
-  // inside, and stays square by taking the smaller side. In portrait the panel is a row above the board,
-  // so the board has the page width but not the height. Charging the padding is what keeps the bottom row
-  // of a portrait board inside the viewport instead of painting under the page's `overflow: hidden`.
+  // The board takes the smaller side of the space left after the panel and `.board-area`'s padding.
   const boardPaddingPx = 2 * CHROME.boardAreaPaddingPx
   const boardAreaWidthPx = portrait ? viewport.width : viewport.width - panelColumnPx
   const boardAreaHeightPx = portrait ? viewport.height - panelRowPx : viewport.height
-  // Landscape's fraction is a cap that already leaves the padding its room (540 of 600 leaves 60);
-  // portrait's fraction is the board's whole area, so the padding comes out of it.
+  // Landscape's fraction already leaves the padding its room; portrait's fraction is the whole area.
   const boardHeight = portrait
     ? Math.floor(viewport.height * boardFraction) - boardPaddingPx
     : Math.floor(viewport.height * boardFraction)
   const boardWidth = boardAreaWidthPx - boardPaddingPx
-  const cell = between(Math.floor(Math.min(boardHeight / grid.rows, boardWidth / grid.cols)), LAYOUT.cellMinPx, LAYOUT.cellMaxPx)
+  const cell = clamp(Math.floor(Math.min(boardHeight / grid.rows, boardWidth / grid.cols)), LAYOUT.cellMinPx, LAYOUT.cellMaxPx)
 
-  const bubblePx = between(Math.round(cell * 0.26), LAYOUT.bubblePxMin, LAYOUT.bubblePxMax)
-  const goalPx = between(Math.round(cell * 0.33), 28, FONTS.goalPx)
-  const levelPx = between(Math.round(cell * 0.46), FONTS.levelPx, 56)
-  const playPx = between(Math.round(cell * 0.90), LAYOUT.tapTargetCssPx, LAYOUT.cellMaxPx)
+  const bubblePx = clamp(Math.round(cell * 0.26), LAYOUT.bubblePxMin, LAYOUT.bubblePxMax)
+  const goalPx = clamp(Math.round(cell * 0.33), 28, FONTS.goalPx)
+  const levelPx = clamp(Math.round(cell * 0.46), FONTS.levelPx, 56)
+  const playPx = clamp(Math.round(cell * 0.90), LAYOUT.tapTargetCssPx, LAYOUT.cellMaxPx)
 
-  // Issue #10: the fit is measured against the panel and board areas the fractions give, using the chrome
-  // the stylesheet paints (the same constants the build emits as `--chrome-*`), so a rack that fits here fits
-  // on screen.
   const panelContentPx = panelRowPx - 2 * CHROME.panelPaddingPx
-  // The two goal cards are charged as two stacked rows, which is the worst case: they sit side by side when
-  // the panel is wide enough (issue #19), so the fit holds either way. The level label's box is the reserved
-  // place, and the mute is positioned rather than flowed, so it takes no row of its own.
+  // The goal cards are charged as two stacked rows, the worst case; side by side only frees room.
   const panelChromePx = LAYOUT.interactiveMinPx + 2 * goalCardRowPx(goalPx)
   const rackRowPx = bubblePx + CHROME.rackRowPx
   const rackBubbles = LAYOUT.rackSizingBubbles
-  // In landscape the rack keeps §8.2's 3-4 per row. In portrait §13 makes it a horizontal band across the
-  // panel, so the columns are whatever the panel width gives it, capped by the rack itself - a band cannot
-  // have more columns than bubbles.
+  // Landscape keeps 3-4 per row; portrait's band takes whatever the panel width gives it.
   const rackWidth = rackWidthFor(panelColumnPx)
   const rackColumns = portrait
     ? bandColumnsFor(rackWidth, bubblePx, rackBubbles)
@@ -147,30 +102,21 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
   const rackRows = Math.ceil(rackBubbles / rackColumns)
   const rackRowsFit = Math.max(0, Math.floor((panelContentPx - panelChromePx - 2 * CHROME.rackPaddingPx) / rackRowPx))
   const boardPx = cell * Math.max(grid.rows, grid.cols)
-  // Issue #25: the balloon is the payoff, so it is sized from the board area it hangs over rather than
-  // from a fixed 44px. Issue #32 raises the factors to 1.5x and the floor to 120 CSS px, which is the tap
-  // target *after* the per-balloon -6% jitter has been applied: a jittered balloon can never fall under
-  // 113 px, so a small board still shows a bunch rather than fingertip balloons. On the target tablet the
-  // factors give 135 px (min(717 x 0.195, 600 x 0.225)).
+
+  // The floor is the smallest balloon after the −6% jitter, so a jittered balloon still clears it.
   const balloonFloorPx = Math.ceil(LAYOUT.balloonPxMin / (1 - LAYOUT.balloonSizeJitter))
   const balloonPx = Math.max(
     balloonFloorPx,
     Math.round(Math.min(boardAreaWidthPx * LAYOUT.balloonWidthFactor, boardAreaHeightPx * LAYOUT.balloonHeightFactor)),
   )
 
-  // Issue #32 (SPEC §10.1, *The bunch*): the overlay the celebration builds is `.board-area`'s padding box,
-  // and the board is centred inside that box, so the board is not at the overlay's origin. The offset is the
-  // padding plus half the slack the cell does not use; where the cell is clamped past the area (`cellMinPx`
-  // on a phone) the board overhangs and the offset is the side it is read from, never a negative one.
+  // The overlay is `.board-area`'s padding box and the board is centred inside it. Where the cell is
+  // clamped past the area, the board overhangs and the offset is read from the side, never negative.
   const contentWidthPx = boardAreaWidthPx - boardPaddingPx
   const contentHeightPx = boardAreaHeightPx - boardPaddingPx
   const boardOffsetXPx = Math.max(0, Math.round(CHROME.boardAreaPaddingPx + (contentWidthPx - boardPx) / 2))
   const boardOffsetYPx = Math.max(0, Math.round(CHROME.boardAreaPaddingPx + (contentHeightPx - boardPx) / 2))
 
-  // The arrow's band: `.celebration`'s `padding-bottom` resolves against the overlay's width, the arrow box
-  // is `playPx` tall inside it, and the same `balloonMarginPx` keeps the blob off the button. Read from the
-  // board's bottom edge, which is where `ui/bunch.ts` refuses a centre. When the band is shallower than the
-  // board's offset the arrow is below the board's edge, so the band contributes nothing there.
   const arrowBandPx = arrowBandTopPx(
     Math.ceil((LAYOUT.celebrationBottomPaddingPct / 100) * boardAreaWidthPx),
     boardOffsetYPx,
@@ -178,9 +124,6 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     LAYOUT.balloonMarginPx,
   )
 
-  // Issue #33: the placement rule lives in `ui/bunch.ts`, so the fit is read off that rule rather than a
-  // lattice this module keeps a second copy of. The board the rule is asked about is the painted board, the
-  // nominal balloon on this device, and the band the arrow refuses.
   const bunchBoard = bunchMetricsFor(boardPx, balloonPx, arrowBandPx)
 
   return {
@@ -199,11 +142,8 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     boardOffsetXPx,
     boardOffsetYPx,
     arrowBandPx,
-    // The fit is the worst case the placement rule can be held to (issue #33): the ladder's widest rung,
-    // counted with the worst spacing and the largest jittered balloon the rung allows, so a board that
-    // cannot hold that many centres cannot hold twelve balloons at that spacing. `ui/bunch.ts` owns the rule
-    // this number is read from, and this is the assertion that keeps it honest: true on the target tablet
-    // and on a portrait turn, false on a phone, where the count has to drop instead.
+    // The widest rung, counted with the worst spacing and the largest jittered balloon, is the
+    // conservative check that the board can hold twelve balloons.
     bunchFitsBoard: bunchCapacity(bunchBoard, spacingRungs()[0] as number) >= MAX_BALLOONS,
     interactivePx: LAYOUT.interactiveMinPx,
     portrait,
@@ -218,10 +158,7 @@ export function computeLayout(viewport: Viewport, grid: GridSize): LayoutMetrics
     rackHeightPx: rackRows * rackRowPx + 2 * CHROME.rackPaddingPx,
     rackFitsPanel: rackRowsFit >= rackRows,
     boardPx,
-    // The board is only pushed past its area when `cellMinPx` clamps a device smaller than SPEC §13 assumes,
-    // which is the case `tapTargetTooSmall` already reports rather than a layout that can be fixed here. The
-    // test is against the area itself and includes the padding, because a board that fits a budget but not
-    // the box it is centred in is exactly the portrait clipping this guards.
+    // Only a device clamped below the tap target runs past its area, which `tapTargetTooSmall` reports.
     boardFitsArea: boardPx + boardPaddingPx <= boardAreaHeightPx && boardPx + boardPaddingPx <= boardAreaWidthPx,
     boardAreaFraction: 1 - panelWidthFraction * panelHeightFraction,
     panelAreaFraction: panelWidthFraction * panelHeightFraction,
@@ -253,32 +190,21 @@ export function applyLayout(root: HTMLElement, viewport: Viewport, grid: GridSiz
   return metrics
 }
 
-/** SPEC §8.2: 3-4 bubbles per row, chosen so the rack fits the panel without scrolling. */
+/** 3-4 bubbles per row, charged conservatively with no horizontal spacing. */
 function rackColumnsFor(rackWidth: number, bubblePx: number): number {
-  // The row spacing is `CHROME.rackRowPx`, the stylesheet's own value, rather than a fraction of the
-  // bubble: it is the same 6 px whatever the bubble size, and reading it as a fraction made the estimate
-  // disagree with the rule. Charging no horizontal spacing keeps this the conservative side.
   const rowWidth = bubblePx + CHROME.rackRowPx
   const fits = Math.floor((rackWidth + CHROME.rackRowPx) / rowWidth)
-  return between(fits, LAYOUT.rackColumnsMin, LAYOUT.rackColumnsMax)
+  return clamp(fits, LAYOUT.rackColumnsMin, LAYOUT.rackColumnsMax)
 }
 
-/**
- * SPEC §13: in portrait the rack is a horizontal band across the panel width, so it takes as many columns as
- * the width gives it, capped by the bubbles the rack holds - a band cannot have more columns than bubbles, and
- * the fit has to describe the rack it is sizing for (ADR 0001). `rackColumnsMin` stays the floor, so a narrow
- * panel still keeps §8.2's 3 per row.
- */
+/** Portrait's band takes as many columns as the panel width gives, never more than the rack holds. */
 function bandColumnsFor(rackWidth: number, bubblePx: number, rackBubbles: number): number {
   const fits = Math.floor((rackWidth + CHROME.rackRowPx) / (bubblePx + CHROME.rackRowPx))
-  return between(fits, LAYOUT.rackColumnsMin, rackBubbles)
+  return clamp(fits, LAYOUT.rackColumnsMin, rackBubbles)
 }
 
-/** The width the rack has: the panel's content box, less the chrome the stylesheet reserves around it. */
+/** The rack's width: the panel's content box less the chrome the stylesheet reserves around it. */
 function rackWidthFor(panelColumnPx: number): number {
-  // Every value here is a `CHROME` constant the build emits as the token `style.css` paints, so the rack
-  // is measured against the panel it is painted inside rather than against a round number that happened
-  // to work on the target device (issue #10, ADR 0004).
   return Math.max(
     0,
     panelColumnPx -
@@ -288,27 +214,22 @@ function rackWidthFor(panelColumnPx: number): number {
   )
 }
 
-/** A goal card row. The ring is taller than the numeral it holds (SPEC §8.1), so the ring sets the height. */
+/** A goal card row: the ring is taller than its numeral, so the ring sets the height. */
 function goalCardRowPx(goalPx: number): number {
   return Math.max(CHROME.goalRingPx, goalPx) + 2 * CHROME.goalPaddingPx
 }
 
-/**
- * Issue #33: the board as `ui/bunch.ts` sees it. The board is square (SPEC §13), so the two edges are the
- * same number, and this is all the placement rule needs to know about a device: the painted board, the
- * nominal balloon on it, and the band the play arrow refuses. Celebration asks for the same three numbers,
- * which is why the rule cannot disagree with the fit reported here.
- */
+/** The board as the placement rule sees it: a square, the nominal balloon, and the arrow's band. */
 export function bunchMetricsFor(boardPx: number, balloonPx: number, arrowBandPx: number): BunchMetrics {
   return { boardWidthPx: boardPx, boardHeightPx: boardPx, balloonPx, arrowBandPx }
 }
 
-/** The top of the play arrow's band, measured up from the board's bottom edge (SPEC §10.1, *The arrow*). */
+/** The top of the play arrow's band, measured up from the board's bottom edge. */
 function arrowBandTopPx(bandPx: number, boardOffsetYPx: number, playPx: number, marginPx: number): number {
   return Math.max(0, bandPx - boardOffsetYPx) + playPx + marginPx
 }
 
-/** CSS `clamp()` is newer than the engine (SPEC §2), so the bounds are computed here instead. */
-function between(value: number, minimum: number, maximum: number): number {
+/** CSS `clamp()` is newer than the engine, so the bounds are applied here. */
+function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value))
 }

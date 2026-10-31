@@ -1,14 +1,9 @@
-/**
- * Plain fallback panel — issue #23.
- *
- * Renders without `?debug=1`, because on the tablet the game dies before the debug overlay is
- * ever reached. It shows what this run recorded before it died, plus the trace that survived
- * from the previous run — the only two things an install-path force-close leaves behind.
- *
- * `fallbackLines` is pure so the wording can be tested without a browser.
- */
-
 import { traceLines, type BootLog } from './bootlog'
+
+/**
+ * The plain fallback panel, rendered without `?debug=1` when the game cannot start. It shows this
+ * run's trace plus the one that survived the previous run.
+ */
 
 const HEADINGS = new Set(['This run', 'Last run'])
 

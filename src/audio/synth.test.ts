@@ -251,9 +251,9 @@ describe('createSynthPlayer', () => {
     const to = body.frequency.points[1] as number
     // The seed drifts the pair together, so the body keeps its shape: that fall is what makes it a plopp
     // rather than the small glide a blip uses.
-    expect(from).toBeGreaterThanOrEqual(AUDIO.ploppBodyFromHz * (1 - AUDIO.ploppPitchJitter))
-    expect(from).toBeLessThanOrEqual(AUDIO.ploppBodyFromHz * (1 + AUDIO.ploppPitchJitter))
-    expect(to / from).toBeCloseTo(AUDIO.ploppBodyToHz / AUDIO.ploppBodyFromHz, 5)
+    expect(from).toBeGreaterThanOrEqual(AUDIO.balloonPopBodyFromHz * (1 - AUDIO.balloonPopPitchJitter))
+    expect(from).toBeLessThanOrEqual(AUDIO.balloonPopBodyFromHz * (1 + AUDIO.balloonPopPitchJitter))
+    expect(to / from).toBeCloseTo(AUDIO.balloonPopBodyToHz / AUDIO.balloonPopBodyFromHz, 5)
   })
 
   it('drifts a plopp from the seed it was handed, so a replay pops the same pitches (SPEC §2)', () => {
@@ -272,8 +272,8 @@ describe('createSynthPlayer', () => {
     expect(first).toBe(again)
     expect(other).not.toBe(first)
     // The drift is small: a pop that wandered would stop sounding like the same balloon.
-    expect(first).toBeGreaterThanOrEqual(AUDIO.ploppBodyFromHz * (1 - AUDIO.ploppPitchJitter))
-    expect(first).toBeLessThanOrEqual(AUDIO.ploppBodyFromHz * (1 + AUDIO.ploppPitchJitter))
+    expect(first).toBeGreaterThanOrEqual(AUDIO.balloonPopBodyFromHz * (1 - AUDIO.balloonPopPitchJitter))
+    expect(first).toBeLessThanOrEqual(AUDIO.balloonPopBodyFromHz * (1 + AUDIO.balloonPopPitchJitter))
   })
 
   it('sounds a firework as a thump plus a sparkle tail, under the plopp (SPEC §11)', () => {
@@ -289,8 +289,8 @@ describe('createSynthPlayer', () => {
 
     // Weather, not an event: the bed is 40% of a plopp's peak and nothing ducks when a pop lands, so the
     // thing she is tapping stays the loudest sound in the room (SPEC §11).
-    expect(AUDIO.fireworkThumpGain).toBeLessThan(AUDIO.ploppGain)
-    expect(AUDIO.fireworkThumpGain).toBeCloseTo(0.4 * AUDIO.ploppGain, 3)
+    expect(AUDIO.fireworkThumpGain).toBeLessThan(AUDIO.balloonPopGain)
+    expect(AUDIO.fireworkThumpGain).toBeCloseTo(0.4 * AUDIO.balloonPopGain, 3)
 
     const thump = ctx.oscillators[0] as FakeOscillator
     expect(thump.frequency.points[0]).toBeCloseTo(AUDIO.fireworkThumpFromHz, -1)

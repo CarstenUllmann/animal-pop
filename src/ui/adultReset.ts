@@ -1,16 +1,3 @@
-/**
- * The adult reset, wired to the level numeral - issue #16.
- *
- * The rules live in `game/adultReset.ts`; this is the pointer handling, the shake, and the confirm
- * icon. There is no visible button and nothing to read (SPEC §1): the path exists for an adult who
- * already knows it, so the only affordance is the half-second shake and the icon that appears after
- * the hold (SPEC §13).
- *
- * Only the pointer handling lives here, because the core must not touch the DOM or the clock (SPEC §15).
- * Delayed work comes in through the `Timer` seam from `ui/timer.ts`, in the same spirit as `Clock` and
- * `KeyValueStore` in `bootlog.ts`, so nothing here has to be assumed to exist.
- */
-
 import { ADULT_RESET } from '../game/constants'
 import {
   cancelReset,
@@ -23,11 +10,16 @@ import {
 import type { Clock } from './bootlog'
 import type { Timer } from './timer'
 
-/** The whole message is one glyph, not a word, because she cannot read (SPEC §1). */
+/**
+ * The adult reset, wired to the level numeral. The rules live in `game/adultReset.ts`; this is the
+ * pointer handling, the shake and the confirm icon. There is no visible button: the path exists for
+ * an adult who already knows it.
+ */
+
+/** The whole message is one glyph, not a word, because she cannot read. */
 export const CONFIRM_GLYPH = '✓'
 
-/** Half a second on the press (issue #16). CSS cannot read a constant, so the build emits
-    `ADULT_RESET.shakeMs` as `--shake-ms` and the stylesheet reads it (ADR 0004). */
+/** CSS cannot read a constant, so the build emits `ADULT_RESET.shakeMs` as `--shake-ms`. */
 export const SHAKE_MS = ADULT_RESET.shakeMs
 
 export type { Timer } from './timer'
@@ -35,7 +27,7 @@ export type { Timer } from './timer'
 export interface AdultResetDeps {
   clock: Clock
   timer: Timer
-  /** Called when the second tap completes the reset. The run decides what the reset keeps (SPEC §14.2). */
+  /** Called when the second tap completes the reset. */
   onReset: () => void
 }
 
@@ -49,7 +41,6 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
   icon.className = 'adult-confirm'
   icon.setAttribute('role', 'button')
   icon.setAttribute('tabindex', '0')
-  // The icon is the whole message, and she cannot read, so the label is for a screen reader.
   icon.setAttribute('aria-label', 'Confirm reset')
   icon.textContent = CONFIRM_GLYPH
   icon.hidden = true
@@ -57,9 +48,7 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
 
   let state: AdultResetState = initialAdultReset()
   let heldFrom = 0
-  // Two timers, because they mean different things: the hold timer belongs to the finger still being
-  // down, and the confirm timer belongs to the confirm step. Releasing early must clear the first and
-  // leave the second alone (issue #16).
+  // Two timers: the hold belongs to the finger being down, the confirm belongs to the confirm step.
   let holdTimer = 0
   let confirmTimer = 0
   let pressed = false
@@ -79,7 +68,7 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
     confirmTimer = 0
   }
 
-  /** Issue #16: a cancel is clean - no shake, no icon, and no timer left running. */
+  /** A cancel is clean: no shake, no icon, and no timer left running. */
   const cancel = (): void => {
     pressed = false
     clearHold()
@@ -89,19 +78,14 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
     show(false)
   }
 
-  /** The second tap confirms (issue #16): it wipes progress and starts a fresh level 1. */
   const confirm = (): void => {
     if (!confirmIsLive(state, deps.clock.now())) return
     cancel()
-    // The run owns the save, so the reset is one command rather than a save this view rebuilds.
     deps.onReset()
   }
 
   const press = (): void => {
-    // The confirm step is open, so this pointerdown is the second tap: it confirms (issue #16). The
-    // numeral is the thing the adult held, and the tick is only the visible half of that target, so a
-    // tap on either one counts. A pointerdown outside the numeral is "any other interaction" and is
-    // cancelled by the document listener below.
+    // The confirm step is open, so this pointerdown is the second tap.
     if (state.stage === 'confirm') {
       confirm()
       return
@@ -109,16 +93,13 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
 
     pressed = true
     heldFrom = deps.clock.now()
-    // SPEC §13: the shake is the only signal before the icon appears, and reduced motion keeps the
-    // icon while dropping the shake.
     numeral.classList.add('panel__level--shaking')
 
     clearHold()
     holdTimer = deps.timer.after(ADULT_RESET.holdMs, () => {
       holdTimer = 0
       const now = deps.clock.now()
-      // A normal tap released long before this fires. The `pressed` half is what makes that true even if
-      // the release handler and this timer race: a finger that is no longer down never opens the step.
+      // The `pressed` half holds even if the release handler and this timer race.
       if (!holdCompleted(pressed, now - heldFrom)) return
       state = openConfirm(now)
       numeral.classList.remove('panel__level--shaking')
@@ -130,28 +111,22 @@ export function mountAdultReset(numeral: HTMLElement, deps: AdultResetDeps): Adu
   const release = (): void => {
     pressed = false
     numeral.classList.remove('panel__level--shaking')
-    // SPEC §14.2: releasing before the hold completed is a normal tap, which does nothing at all.
+    // Releasing before the hold completed is a normal tap, which does nothing at all.
     if (state.stage === 'idle') clearHold()
   }
 
   const onIconClick = (): void => {
-    // Clicks that do reach the icon (assistive tech, a synthetic click) are the same confirmation. A
-    // pointer tap already confirmed on pointerdown, so this is then a no-op.
+    // Assistive tech or a synthetic click is the same confirmation; a pointer tap already handled it.
     confirm()
   }
 
   const onIconKey = (event: KeyboardEvent): void => {
-    // A span with `role="button"` gets no keyboard behaviour for free, and the icon is focusable.
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     confirm()
   }
 
-  /**
-   * Issue #16: any other interaction cancels the confirm step. This is on the document rather than the
-   * numeral, because the adult might touch the board or the mute after opening it, and a confirm that
-   * waits for its 15-second timeout is not "cancels cleanly".
-   */
+  /** Any other interaction cancels the confirm step, rather than waiting for its timeout. */
   const onDocumentPointerDown = (event: PointerEvent): void => {
     if (state.stage !== 'confirm') return
     if (numeral.contains(event.target as Node)) return

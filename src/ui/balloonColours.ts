@@ -2,24 +2,10 @@ import type { Rng } from '../game/types'
 import type { Place } from './bunch'
 
 /**
- * Balloon colour selection (SPEC §10.1, issue #49). A pure rule: given the place a balloon is about
- * to hang at, the balloons already hanging, the palette and a source of randomness, it answers one
- * colour for the newcomer. No DOM, no drawing, no timers - `ui/celebration` asks this rule once per
- * spawn, for the opening bunch and for every refill.
- *
- * ## The neighbour rule
- *
- * Two balloons are neighbours when their centre distance is below the mean of their two jittered
- * widths. That is the same mean-size metric `canPlaceAt` uses for minimum spacing, so "overlapping"
- * has one meaning in the codebase rather than a second, colour-only definition.
- *
- * The newcomer takes a colour no neighbour is using. With nine colours and a bunch of at most twelve
- * the palette is rarely exhausted, but when neighbours already hold every entry the rule falls back
- * to the least-used neighbour colour, breaking ties with the injected `Rng`. It always answers an
- * entry from the palette, so a balloon can never be left colourless.
- *
- * The draw uses the injected `Rng`, so a session still replays. Placement has already been decided
- * by the time this rule runs, so the colour choice cannot move a balloon.
+ * Balloon colour selection: a pure rule that gives a newcomer a colour no neighbour is using.
+ * Neighbours are balloons whose centres are closer than the mean of their widths, the same metric
+ * the placement rule uses. When the palette is exhausted it repeats the least-used neighbour colour.
+ * The draw uses the injected `Rng`, so a session still replays.
  */
 
 /** A balloon already on screen: the place it hangs at and the colour it was given. */
@@ -28,7 +14,7 @@ export interface HungBalloon {
   colour: string
 }
 
-/** The distance below which two balloon bodies visibly overlap: the mean of their two widths. */
+/** The distance below which two balloon bodies visibly overlap. */
 export function isColourNeighbour(place: Place, other: Place): boolean {
   return Math.hypot(place.x - other.x, place.y - other.y) < (place.size + other.size) / 2
 }

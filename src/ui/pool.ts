@@ -1,18 +1,13 @@
-/**
- * Fixed-capacity object pool (SPEC §10.2). Particles are reused from an array of prefilled
- * objects; nothing is allocated inside the draw loop, so a fireworks burst cannot make the
- * old WebView stutter. `acquire` returns null once the pool is exhausted rather than
- * growing it, which is what keeps the 500-object cap real.
- */
+/** A fixed-capacity object pool, so the draw loop allocates nothing. */
 export interface Pool<T> {
   readonly capacity: number
-  /** null when the pool is exhausted - the caller drops the object instead of allocating. */
+  /** null when the pool is exhausted; the caller drops the object rather than allocating. */
   acquire(): T | null
   release(item: T): void
   /** Objects currently handed out, in acquisition order. */
   active(): readonly T[]
   activeCount(): number
-  /** Number of objects the pool was created with: nothing is added later. */
+  /** How many objects the pool was created with. */
   createdCount(): number
   reset(): void
 }
@@ -28,7 +23,6 @@ export function createPool<T>(capacity: number, create: () => T): Pool<T> {
     capacity,
     acquire(): T | null {
       if (active.length >= capacity) return null
-      // Reuse a released object before creating anything, which is the point of the pool.
       const free = items.find((item) => !handed.has(item))
       if (free === undefined) return null
       handed.add(free)

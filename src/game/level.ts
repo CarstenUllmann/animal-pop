@@ -3,14 +3,7 @@ import { createBoard } from './board'
 import { createRng, mixSeed } from './rng'
 import type { AnimalId, Goal, LevelState, Rng, SaveState } from './types'
 
-/**
- * Level parameters and generation (SPEC §9). Pure: the numbers come from the ramp table in
- * `constants.ts`, and every choice is made through the injected `Rng`, so a level regenerates
- * identically for the same `(level, sessionSeed)` - which is what makes resume and bug reports
- * from the tablet mean anything.
- */
-
-/** The ramp row that applies to a level: the last row started at or before it. */
+/** The last ramp row that starts at or before `level`. */
 export function rampForLevel(level: number): LevelRampRow {
   for (let i = LEVEL_RAMP.length - 1; i >= 0; i--) {
     const row = LEVEL_RAMP[i]
@@ -23,7 +16,7 @@ export function typesForLevel(level: number): number {
   return rampForLevel(level).types
 }
 
-/** Goal target per goal animal, which is also what the goal ring fills against. */
+/** Goal target per animal, which is also what the ring fills against. */
 export function goalTargetForLevel(level: number): number {
   return rampForLevel(level).goalEach
 }
@@ -36,7 +29,7 @@ export function levelSeed(sessionSeed: number, level: number): number {
   return mixSeed(sessionSeed, level)
 }
 
-/** Two distinct goal animals, always among the types in play (SPEC §8.1). */
+/** Two distinct goal animals, both from the level's roster. */
 export function pickGoals(roster: readonly AnimalId[], target: number, rng: Rng): Goal[] {
   if (roster.length < 2) throw new Error('A level needs at least two animal types to pick goals from')
   const shuffled = rng.shuffle(roster)
@@ -48,10 +41,7 @@ export function pickGoals(roster: readonly AnimalId[], target: number, rng: Rng)
   ]
 }
 
-/**
- * A level from scratch. The roster is randomised per level, the board is a full one that is
- * guaranteed to have a legal tap, and the rack starts full.
- */
+/** A level from scratch: a shuffled roster, a playable board, and a full rack. */
 export function createLevel(
   level: number,
   sessionSeed: number,
@@ -75,10 +65,7 @@ export function createLevel(
   }
 }
 
-/**
- * A level rebuilt from a save (SPEC §14.1). The roster and the goal animals come back from the
- * same seed, so the only things to overlay are the board, the goal counters and the rack.
- */
+/** A level rebuilt from a save. The roster and goal animals come back from the same seed. */
 export function resumeLevel(saved: SaveState, pool: readonly AnimalId[]): LevelState {
   const fresh = createLevel(saved.level, saved.sessionSeed, pool)
   return {

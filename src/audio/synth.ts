@@ -6,12 +6,12 @@ import type { AudioPlayer } from './player'
 /** Major pentatonic offsets used to arpeggiate larger clusters. */
 const ARPEGGIO_RATIOS = [1, 9 / 8, 5 / 4, 3 / 2, 5 / 3, 2] as const
 
-/** How far a blip falls by the end of its envelope, which is what makes it a "pop" rather than a beep. */
+/** How far a blip falls by the end of its envelope, which makes it a pop rather than a beep. */
 const GLIDE = 0.82
 
 interface ToneShape {
   at: number
-  /** Start and end frequency. The glide is the shape, so a plopp can drop far further than a blip. */
+  /** Start and end frequency. */
   from: number
   to: number
   duration: number
@@ -27,35 +27,23 @@ interface NoiseShape {
   gain: number
   filterStart: number
   filterEnd: number
-  /**
-   * `peakAt` and `peakHz` give the band a mid-point, so the whoosh can rise and then fall. Without them
-   * the filter sweeps straight from one edge to the other, which is what a short grain wants.
-   */
+  /** An optional mid-point, so a sweep can rise and then fall. */
   peakAt?: number
   peakHz?: number
   type?: BiquadFilterType
 }
 
-/**
- * Web Audio implementation of the player (SPEC §11). No files, no network, no
- * looping background music: every sound is synthesised on demand.
- *
- * The context is created lazily inside the first gesture (Android requires it) and
- * then reused. Before unlock, every play call is a no-op.
- */
+/** Web Audio implementation of the player: every sound is synthesised on demand, with no files. */
 export function createSynthPlayer(): AudioPlayer {
   let context: AudioContext | null = null
   let master: GainNode | null = null
   let muted = false
-  /** One noise buffer for the player's life, read from a random offset per grain, so nothing allocates. */
+  /** One noise buffer for the player's life, read from a random offset per grain. */
   let noiseBuffer: AudioBuffer | null = null
 
   /**
-   * Nodes that have started but not finished, each with the time it is scheduled to end at.
-   * `stop()` cancels them (SPEC §10.1, issue #14): a fanfare still running when she taps the play
-   * arrow must not bleed into the next level. Entries are pruned by their own end time rather than by
-   * `onended`, so a long session does not keep every chime it has ever played, and nothing here needs
-   * an API the engine baseline does not have.
+   * Nodes that have started but not finished, with the time each is scheduled to end. `stop()`
+   * cancels them, and entries are pruned by their own end time rather than by `onended`.
    */
   const sounding: Array<{ node: { stop(when?: number): void }; endsAt: number }> = []
 
@@ -98,9 +86,7 @@ export function createSynthPlayer(): AudioPlayer {
         return
       }
     }
-    // `state` and `resume()` are not guaranteed on an older WebView, and Android only allows the
-    // context to start inside a gesture. Resuming an already-running context is a no-op, and an
-    // engine without `resume` simply leaves the taps silent rather than throwing.
+    // Android only allows the context to start inside a gesture. An engine without `resume` stays silent.
     if (typeof context.resume === 'function') {
       void Promise.resolve(context.resume()).catch(() => undefined)
     }
@@ -112,10 +98,8 @@ export function createSynthPlayer(): AudioPlayer {
   }
 
   /**
-   * A deterministic number sequence from the seed the caller passed in. The celebration draws that seed
-   * from the injected `Rng`, so a replayed session wobbles the same way (SPEC §2); the synth holds no
-   * random state of its own, which is why a firework and a plopp can vary without either of them being
-   * un-testable.
+   * A deterministic number sequence from the caller's seed, so a replayed session wobbles the same
+   * way. The synth holds no random state of its own.
    */
   function seeded(seed: number): () => number {
     let state = Math.floor(Math.abs(seed) * 4294967296) % 4294967296
@@ -148,11 +132,7 @@ export function createSynthPlayer(): AudioPlayer {
     track(osc, shape.at + shape.duration + 0.03)
   }
 
-  /**
-   * Filtered noise, the shape the whoosh, the shimmer, a plopp's click and a firework's tail all share
-   * (SPEC §11). The band is read from one shared buffer at a random offset, so a burst of seventeen
-   * sparkle grains allocates one source each rather than one buffer each.
-   */
+  /** Filtered noise, the shape the whoosh, the shimmer and the sparkle tails share. */
   function noise(shape: NoiseShape): void {
     const nodes = ready()
     if (nodes === null) return
@@ -187,8 +167,7 @@ export function createSynthPlayer(): AudioPlayer {
     source.connect(filter)
     filter.connect(gain)
     gain.connect(output)
-    // A short grain and a long swell must not begin on the same samples every time, so each read starts
-    // somewhere else in the buffer.
+    // A short grain and a long swell must not begin on the same samples every time.
     const span = Math.max(0, noiseBuffer.duration - shape.duration)
     source.start(shape.at, Math.random() * span)
     source.stop(shape.at + shape.duration + 0.02)
@@ -200,7 +179,6 @@ export function createSynthPlayer(): AudioPlayer {
     if (nodes === null) return
 
     const animal: AnimalDef | undefined = ANIMALS_BY_ID.get(animalId)
-    // Fallback for engines that cannot parse the nullish coalescing operator.
     const root = animal === undefined ? 659.25 : animal.pitch
     const notes = Math.min(Math.max(1, count), AUDIO.popMaxNotes)
     const start = nodes.audio.currentTime + 0.005
@@ -247,7 +225,7 @@ export function createSynthPlayer(): AudioPlayer {
     })
   }
 
-  /** A single bubble leaving the rack: one short high tick (SPEC §11). */
+  /** A single bubble leaving the rack: one short high tick. */
   function playBubble(): void {
     const nodes = ready()
     if (nodes === null) return
@@ -261,10 +239,7 @@ export function createSynthPlayer(): AudioPlayer {
     })
   }
 
-  /**
-   * The sparkle tail of a firework: short high grains scattered over `spread` seconds, each with its own
-   * level. It is what turns a thump into a firework rather than a door closing.
-   */
+  /** Short high grains scattered over `spread` seconds, each with its own level. */
   function crackle(at: number, spread: number, count: number, level: number, next: () => number): void {
     for (let i = 0; i < count; i++) {
       noise({
@@ -278,12 +253,7 @@ export function createSynthPlayer(): AudioPlayer {
     }
   }
 
-  /**
-   * A firework: a muffled thump and a sparkle tail, kept well under a balloon's plopp because it is
-   * weather rather than an event (SPEC §11). Everything that differs between two bursts - pitch, level,
-   * how many sparks and how far they scatter - comes from the seed the celebration drew from the
-   * injected `Rng`, so a replay sounds the same and no two bursts are identical (SPEC §2).
-   */
+  /** A firework: a muffled thump and a sparkle tail, well under a balloon pop. */
   function playFirework(seed: number): void {
     const nodes = ready()
     if (nodes === null) return
@@ -319,10 +289,8 @@ export function createSynthPlayer(): AudioPlayer {
   }
 
   /**
-   * A balloon giving way (SPEC §11): the latex snapping, then the body it leaves behind, dropping from
-   * 320 Hz to 120 Hz. There is no pitched blip and no ladder to climb - a pop is the same pop every
-   * time, apart from the small drift the seed allows, so a handful of taps does not sound like one tap
-   * replayed.
+   * A balloon giving way: the latex snapping, then the body dropping from 320 Hz to 120 Hz. The seed
+   * drifts the pitch a little so repeated taps are not one sound replayed.
    */
   function playBalloon(seed: number): void {
     const nodes = ready()
@@ -330,30 +298,26 @@ export function createSynthPlayer(): AudioPlayer {
 
     const next = seeded(seed)
     const start = nodes.audio.currentTime + 0.005
-    const pitch = 1 + (next() - 0.5) * 2 * AUDIO.ploppPitchJitter
+    const pitch = 1 + (next() - 0.5) * 2 * AUDIO.balloonPopPitchJitter
 
     noise({
       at: start,
-      duration: AUDIO.ploppClickDuration,
-      gain: AUDIO.ploppClickGain,
-      filterStart: AUDIO.ploppClickStartHz,
-      filterEnd: AUDIO.ploppClickEndHz,
+      duration: AUDIO.balloonPopClickDuration,
+      gain: AUDIO.balloonPopClickGain,
+      filterStart: AUDIO.balloonPopClickStartHz,
+      filterEnd: AUDIO.balloonPopClickEndHz,
     })
     tone({
       at: start + 0.004,
-      from: AUDIO.ploppBodyFromHz * pitch,
-      to: AUDIO.ploppBodyToHz * pitch,
-      duration: AUDIO.ploppDuration,
-      gain: AUDIO.ploppGain,
+      from: AUDIO.balloonPopBodyFromHz * pitch,
+      to: AUDIO.balloonPopBodyToHz * pitch,
+      duration: AUDIO.balloonPopDuration,
+      gain: AUDIO.balloonPopGain,
       attack: 0.005,
     })
   }
 
-  /**
-   * Completion cue (SPEC §10.1, §11). Big and medium parties get the rising arpeggio with a
-   * shimmer; a small one gets the soft two-note chime, which is quieter but not sad — there is
-   * no fail state, so nothing here sounds like a mistake.
-   */
+  /** A big or medium party gets a rising arpeggio and shimmer; a small one gets a soft two-note chime. */
   function playCompletion(tier: PartyTier): void {
     const nodes = ready()
     if (nodes === null) return
@@ -398,9 +362,7 @@ export function createSynthPlayer(): AudioPlayer {
   function setMuted(next: boolean): void {
     muted = next
     if (master !== null) master.gain.value = muted ? 0 : AUDIO.masterGain
-    // Issue #17: mute is a cut, not a pause. Everything already scheduled would otherwise become
-    // audible again the moment she unmutes, which is a backlog of sounds she never heard being
-    // played late. `ready()` already refuses to start anything new while muted.
+    // Mute is a cut, not a pause: already-scheduled sounds must not become audible on unmute.
     if (next) stop()
   }
 

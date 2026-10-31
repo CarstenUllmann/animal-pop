@@ -6,39 +6,30 @@ import { createRng } from './rng'
 import type { AnimalId, Group, LevelState, PartyTier, Rng } from './types'
 
 /**
- * The two-policy simulator (SPEC §16.2, issue #21): a headless player over levels 1-30, once per
- * seeded run for each policy, so the ramp in `constants.ts` is chosen against measured numbers
- * rather than the estimates §9.1 carries. `npm run sim` prints the table; `sim.test.ts` asserts
- * the acceptance bands §16.2 lists.
- *
- * Pure (SPEC §2): no DOM, no timers, every choice through the injected `Rng`, so a run replays.
- * `tapIntervalMs` and `settleMs` only turn taps into the session length §9.3 measures — the game
- * itself does not use them.
- *
- * Policies pick a group on the board, which is what §16.2 defines. The two-deep tap queue (§7.5)
- * is not modelled here: the queue decides which legal group she can reach, not whether a group is
- * legal, so a policy that picks a random legal group makes the same choice at queue depth.
+ * The headless player behind `npm run sim`: two policies over levels 1-30, so the ramp is chosen
+ * against measured numbers. Pure, so a run replays. The tap queue is not modelled: it decides
+ * which legal group she can reach, not whether a group is legal.
  */
 
 /** A policy chooses which legal group to tap. `null` means it does not tap. */
 export type TapPolicy = (state: LevelState, rng: Rng) => number | null
 
-/** SPEC §16.2: the random policy picks a random legal group — a five-year-old mashing. */
+/** Picks a random legal group, the way a child mashing does. */
 export function randomPolicy(state: LevelState, rng: Rng): number | null {
-  return headOf(pickGroup(groupsToTap(state), rng))
+  return firstCellOf(pickGroup(legalGroups(state), rng))
 }
 
-/** SPEC §16.2: the greedy policy picks the largest group, preferring goal animals. */
+/** Picks the largest group, preferring goal animals. */
 export function greedyPolicy(state: LevelState, rng: Rng): number | null {
-  const groups = groupsToTap(state)
+  const groups = legalGroups(state)
   if (groups.length === 0) return null
 
   const goalGroups = groups.filter((group) => state.goals.some((goal) => goal.remaining > 0 && goal.animal === group.animal))
   const candidates = goalGroups.length > 0 ? goalGroups : groups
-  return headOf(pickGroup(largestGroups(candidates), rng))
+  return firstCellOf(pickGroup(largestGroups(candidates), rng))
 }
 
-function groupsToTap(state: LevelState): Group[] {
+function legalGroups(state: LevelState): Group[] {
   return getGroups(state.board, MIN_GROUP)
 }
 
@@ -48,7 +39,7 @@ function pickGroup(groups: readonly Group[], rng: Rng): Group | null {
   return group === undefined ? null : group
 }
 
-/** The groups tied for the largest size, so a tie is broken through the injected `Rng`. */
+/** The groups tied for largest, so the tie is broken through the injected `Rng`. */
 function largestGroups(groups: readonly Group[]): Group[] {
   let size = 0
   for (const group of groups) {
@@ -57,7 +48,7 @@ function largestGroups(groups: readonly Group[]): Group[] {
   return groups.filter((group) => group.cells.length === size)
 }
 
-function headOf(group: Group | null): number | null {
+function firstCellOf(group: Group | null): number | null {
   if (group === null) return null
   const cell = group.cells[0]
   return cell === undefined ? null : cell
@@ -66,29 +57,27 @@ function headOf(group: Group | null): number | null {
 export interface SimRun {
   level: number
   policy: string
-  /** Taps before both goals reach zero — the number the ramp is judged by. */
+  /** Taps before both goals reach zero. */
   tapsToGoal: number
-  /** The taps among those that spent a bubble, which is what the rack is sized against (SPEC §7.1). */
+  /** The taps among those that spent a bubble. */
   popsToGoal: number
-  /** SPEC §1: after the goals she keeps tapping for fun, until the board runs out or times out. */
+  /** Taps after the goals, for fun. */
   tapsAfterGoal: number
-  /** Taps that did nothing: a single animal or an empty cell costs no bubble (SPEC §7.2). */
+  /** Taps that did nothing. */
   invalidTaps: number
-  /** SPEC §8.3: bubbles left on the rack at completion, floored at MIN_BUBBLES, never zero. */
   bubblesLeft: number
-  /** What the acceptance band is measured on: `bubblesLeft / bubblesStart` at completion. */
+  /** `bubblesLeft / bubblesStart` at completion. */
   rackShare: number
-  /** What the meter shows at that moment: `bubblesLeft` capped at 12 (SPEC §8.4). */
+  /** What the meter shows at that moment, capped at 12. */
   balloons: number
-  /** Taps that counted toward a goal on the first pass (SPEC §16.2). */
+  /** Taps that counted toward a goal on the first pass. */
   goalTapsFirstPass: number
-  /** Reshuffles the dead-board rule produced (SPEC §7.4). */
   reshuffles: number
-  /** §9.3's measure: the goal phase, which is the part of a session the ramp can control. */
+  /** The goal phase, which is the part of a session the ramp can control. */
   goalSeconds: number
-  /** The whole level session, fun tail included. The tail is open-ended by design (SPEC §1). */
+  /** The whole level session, fun tail included. */
   sessionSeconds: number
-  /** Always true by design: the party floors at 1, so a level always completes (SPEC §8.3). */
+  /** Always true by design: a level always completes. */
   complete: boolean
 }
 
@@ -141,8 +130,6 @@ export function playLevel(
     run.balloons = partySize(state).balloons
     run.complete = true
 
-    // SPEC §1: she does not stop at the goal. The fun tail is what the celebration is built for;
-    // it ends when the board runs out or the §1 timeout is reached, which SIM caps at funTailTaps.
     const tailStart = run.tapsToGoal + run.tapsAfterGoal
     while (run.tapsAfterGoal < SIM.funTailTaps && tailStart + run.tapsAfterGoal < SIM.maxTaps) {
       const cell = policy(state, rng)
@@ -154,70 +141,54 @@ export function playLevel(
       if (result.reshuffled !== null) run.reshuffles += 1
     }
 
-    // SPEC §4: the goal pause is the settle that follows the completion.
-    run.goalSeconds = seconds(run.tapsToGoal) + SIM.settleMs / 1000
-    run.sessionSeconds = seconds(run.tapsToGoal + run.tapsAfterGoal) + SIM.settleMs / 1000
+    run.goalSeconds = tapSeconds(run.tapsToGoal) + SIM.settleMs / 1000
+    run.sessionSeconds = tapSeconds(run.tapsToGoal + run.tapsAfterGoal) + SIM.settleMs / 1000
   }
 
   return run
 }
 
-/**
- * SPEC §9.3: one tap every `tapIntervalMs`. The settle is not added on top, because the tap queue
- * (§3) is what lets her tap while the board is still settling — a settle only costs time if it is
- * longer than the gap between her taps, and it never is at SIM's cadence.
- */
-function seconds(taps: number): number {
+/** One tap every `tapIntervalMs`; the queue lets her tap while the board settles. */
+function tapSeconds(taps: number): number {
   return (taps * Math.max(SIM.tapIntervalMs, SIM.settleMs)) / 1000
 }
 
-/**
- * §16.2's report: mean, median and p10 bubbles left, mean taps, estimated session duration. The
- * three readings are not interchangeable, and the two bands §16.2 states are written in different
- * ones: the numeric band is a mean, and the floor clause is a percentile ("can plausibly end with"),
- * so a summary that reports only one of them cannot check both.
- */
 export interface LevelSummary {
   level: number
   policy: string
   runs: number
   completedShare: number
 
-  /** Mean taps, as §16.2 asks, and the pop count those taps spent a bubble on. */
   meanTaps: number
   meanPops: number
   meanLeft: number
   meanShare: number
-  /** The tier the mean puts the party in, from the shipped rule in `rules.ts`. */
   meanTier: PartyTier
 
-  /** The typical run, for the numbers §9.1's table quotes. */
   medianTaps: number
   medianLeft: number
   medianShare: number
   medianTier: PartyTier
 
-  /** The run that plausibly ends with the least left — the reading §9.1's floor clause is written in. */
+  /** The run that plausibly ends with the least left, which is the floor clause's reading. */
   p10Left: number
   p10Share: number
   p10Tier: PartyTier
 
-  /** The pop count at the top of the distribution, which is what the rack has to cover. */
+  /** The pop count at the top of the distribution, which the rack has to cover. */
   p90Pops: number
 
-  /** What the meter shows, capped at MAX_BALLOONS (SPEC §8.4). */
   meanBalloons: number
   medianBalloons: number
 
   meanInvalidShare: number
-  /** §9.3: the goal phase is the part of the session the ramp controls; the fun tail is hers. */
   medianGoalSeconds: number
   medianSessionSeconds: number
 
   /** The numbers in the ramp row this level was measured against. */
   rampMinTaps: number
   rampMedianTaps: number
-  /** The rack the ramp gives this level, so a missed band shows which number to change. */
+  /** The rack the ramp gives this level. */
   rack: number
 }
 
@@ -280,7 +251,7 @@ function sorted(values: readonly number[]): number[] {
   return values.slice().sort((a, b) => a - b)
 }
 
-/** Play every level once per run for each policy, from one session seed. */
+/** Play every level `runs` times for each policy, from one session seed. */
 export function simulate(
   pool: readonly AnimalId[],
   runs: number = SIM.runs,

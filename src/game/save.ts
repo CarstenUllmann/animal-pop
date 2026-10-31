@@ -1,13 +1,6 @@
 import { BOARD_SIZE, MIN_BUBBLES } from './constants'
 import type { KeyValueStore, LevelState, SaveState } from './types'
 
-/**
- * The persisted level (SPEC §14.1). Every storage call is guarded, because a WebView can refuse
- * `localStorage` outright and a force-close can leave a half-written value behind: a save we
- * cannot trust is treated as no save, so the game starts at level 1 instead of crashing on a
- * board it cannot read.
- */
-
 export const SAVE_KEY = 'pop-pals.v1'
 
 /** Bump when the shape changes; an old save resets to level 1 rather than being migrated. */
@@ -16,7 +9,6 @@ export const SAVE_VERSION = 1
 /** Facts that belong to the run rather than to a level. */
 export interface SaveContext {
   muted: boolean
-  /** Internal only, never shown to her. */
   levelsCompleted: number
 }
 
@@ -34,7 +26,7 @@ export function toSaveState(state: LevelState, context: SaveContext): SaveState 
   }
 }
 
-/** Written after every resolved tap and on level transition. False when storage refuses. */
+/** False when storage refuses. */
 export function writeSave(state: LevelState, context: SaveContext, storage: KeyValueStore): boolean {
   try {
     return storage.write(SAVE_KEY, JSON.stringify(toSaveState(state, context)))
@@ -43,7 +35,7 @@ export function writeSave(state: LevelState, context: SaveContext, storage: KeyV
   }
 }
 
-/** Null means "nothing to resume", which includes a save that does not match the shape. */
+/** Null means "nothing to resume", including a save that does not match the shape. */
 export function readSave(storage: KeyValueStore): SaveState | null {
   let text: string | null
   try {
@@ -62,7 +54,6 @@ export function readSave(storage: KeyValueStore): SaveState | null {
   if (typeof value !== 'object' || value === null) return null
 
   const record = value as Record<string, unknown>
-  // A save from another schema version is not resumable; §14.1 says resetting is acceptable.
   if (record.version !== SAVE_VERSION) return null
   if (typeof record.sessionSeed !== 'number' || typeof record.level !== 'number') return null
   if (record.level < 1 || !Number.isInteger(record.level)) return null

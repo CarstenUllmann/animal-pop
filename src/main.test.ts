@@ -50,7 +50,7 @@ describe('the board on screen matches the board in the state (SPEC §7.4, issue 
   it('keeps the whoosh out of the pop, so it cannot play over a board that is still playable', () => {
     // The regression: `playTap` played the whoosh whenever `result.reshuffled` was set, but nothing then
     // showed the reshuffle, so the sound announced a change the screen never made.
-    expect(between(mainSource, 'function playTap(', '}')).not.toContain('playReshuffle')
+    expect(between(mainSource, 'function playTapSounds(', '}')).not.toContain('playReshuffle')
   })
 })
 
@@ -94,7 +94,7 @@ describe('the row that claims pops gets the pops rather than the size of the set
     // `nextLevel()` leaves the party before the next one is opened, so the row cannot read as the total of a
     // level she has moved on from - and the adult reset is a level change too, so it leaves the party the same
     // way (SPEC §14.2).
-    const next = between(mainSource, 'function nextLevel(', 'function block(')
+    const next = between(mainSource, 'function nextLevel(', 'function divWithClass(')
     expect(next).toContain('celebration.stop()')
     expect(between(mainSource, 'onReset:', 'void view')).toContain('celebration.stop()')
   })

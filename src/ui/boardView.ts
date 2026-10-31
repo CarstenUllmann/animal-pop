@@ -20,10 +20,7 @@ export interface BoardView {
 
 export interface BoardViewOptions {
   onTap(index: number): void
-  /**
-   * The level's goals, so a tile can carry the glow SPEC §8.1 asks for. It is read once per settled
-   * board rather than once per tile, because the glow is a property of the board (issue #48).
-   */
+  /** Read once per settled board rather than once per tile. */
   goals: () => readonly Goal[]
 }
 
@@ -34,9 +31,8 @@ const ms = (duration: number): number => (REDUCED_MOTION ? Math.min(duration, 80
 const stagger = (delay: number): number => (REDUCED_MOTION ? 0 : delay)
 
 /**
- * Run one keyframe effect, or resolve at once when the engine cannot animate. The tile keeps
- * the inline transform it is given, so the board still lands in the right place as a static
- * grid on an engine without the Web Animations API.
+ * Run one keyframe effect, or resolve at once when the engine cannot animate. Chrome 61 can animate
+ * but has no `Animation.finished`, so the tile keeps the inline transform its caller set.
  */
 function runAnimation(
   element: HTMLElement,
@@ -45,9 +41,6 @@ function runAnimation(
 ): Promise<unknown> {
   if (!canAnimate(element)) return Promise.resolve()
   const animation = element.animate(keyframes, options)
-  // Chrome 61 can animate but cannot say when an animation lands, so there is no completion
-  // signal to sequence the board on. The tile keeps the inline transform its caller already set,
-  // which is the static board SPEC §14.3 allows.
   if (!canAwaitFinished(animation)) return Promise.resolve()
   return animation.finished.catch(() => undefined)
 }
@@ -76,7 +69,7 @@ export function createBoardView(options: BoardViewOptions): BoardView {
     const tile = document.createElement('button')
     tile.type = 'button'
     tile.className = 'tile'
-    // SPEC §8.1: only a goal animal in a legal group is marked, so the glow never promises a wobble.
+    // Only a goal animal in a legal group is marked, so the glow never promises a wobble.
     if (highlighted.has(index)) tile.classList.add('tile--goal')
     tile.tabIndex = -1
     tile.dataset.index = String(index)
@@ -126,7 +119,6 @@ export function createBoardView(options: BoardViewOptions): BoardView {
   }
 
   async function deal(next: Board): Promise<void> {
-    // Once per board, not once per tile: the rule needs the whole settled board (issue #48).
     const highlighted = goalHighlightCells(next, options.goals())
     const animations: Array<Promise<unknown>> = []
     for (let index = 0; index < next.length; index++) {
@@ -153,8 +145,6 @@ export function createBoardView(options: BoardViewOptions): BoardView {
       newPerColumn.set(col, seen === undefined ? 1 : seen + 1)
     }
 
-    // The settled board is the one on screen after this animation, so it is the one the glow is
-    // decided from — once for the whole board, like `deal` (issue #48).
     const highlighted = goalHighlightCells(result.board, options.goals())
     const animations: Array<Promise<unknown>> = []
     for (const move of result.moves) {
@@ -166,7 +156,6 @@ export function createBoardView(options: BoardViewOptions): BoardView {
       let startRow: number
       let delay: number
       if (move.from === null) {
-        // New animals stack above the board and drop in from the top.
         const stacked = newPerColumn.get(col)
         startRow = row - (stacked === undefined ? 1 : stacked)
         delay = row * MOTION.dealStagger

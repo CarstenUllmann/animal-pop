@@ -3,7 +3,7 @@ import { getGroups, hasGroupOfAtLeast, hasLegalGroup, indexOf } from './board'
 import { BOARD_SIZE, GRID, MAX_BALLOONS, MIN_BUBBLES, RESHUFFLE_MIN_GROUP } from './constants'
 import { createLevel } from './level'
 import { createRng } from './rng'
-import { countByAnimal, goalProgress, isComplete, partySize, resolveTap, shouldShowParty } from './rules'
+import { goalProgress, groupCounts, isComplete, partySize, resolveTap, shouldShowParty } from './rules'
 import type { Goal, LevelState, Rng } from './types'
 
 const POOL = ['cat', 'rabbit', 'panda', 'frog']
@@ -115,7 +115,7 @@ describe('tap resolution', () => {
     const state = stateWith(board, [goal('frog', 5, 5), goal('panda', 5, 5)], 12, 12)
 
     const result = resolveTap(state, indexOf(3, 1), createRng(17))
-    expect(countByAnimal(result.group!)).toEqual({ frog: 3 })
+    expect(groupCounts(result.group!)).toEqual({ frog: 3 })
     expect(result.progress).toBe(3)
     expect(result.state.goals[0]).toEqual({ animal: 'frog', remaining: 2, target: 5 })
     expect(result.state.goals[1]!.remaining).toBe(5)

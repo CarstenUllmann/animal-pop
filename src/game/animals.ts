@@ -10,19 +10,16 @@ import { ANIMAL_IDS } from './animalIds'
 import type { AnimalId } from './types'
 
 /**
- * The animal manifest (SPEC §12.2). Adding, removing or re-drawing an animal is a
- * data change only: keep `id` and `pitch` stable, point `face` at a new file. The ids live in
- * `animalIds.ts`, so the simulator can ramp the same roster the game ships without pulling the
- * asset graph (which only the bundler can resolve).
+ * The animal manifest. Swapping art is a data change: keep `id` and `pitch`, point `face` at the
+ * new file.
  *
- * Art: Twemoji (https://github.com/jdecked/twemoji), CC BY 4.0. The SVGs are bundled
- * locally, so the game makes no network request for them.
+ * Art: Twemoji (https://github.com/jdecked/twemoji), CC BY 4.0.
  */
 export interface AnimalDef {
   id: AnimalId
   label: string
   face: string
-  /** Hz, root note for the synth audio player. C-major pentatonic. */
+  /** Hz, root note for the synth. */
   pitch: number
 }
 
@@ -38,14 +35,14 @@ const FACES: Record<AnimalId, string> = {
 }
 
 const PITCHES: Record<AnimalId, number> = {
-  cat: 523.25, // C5
-  rabbit: 587.33, // D5
-  panda: 659.25, // E5
-  frog: 783.99, // G5
-  pig: 880.0, // A5
-  penguin: 1046.5, // C6
-  monkey: 1174.66, // D6
-  fox: 1318.51, // E6
+  cat: 523.25,
+  rabbit: 587.33,
+  panda: 659.25,
+  frog: 783.99,
+  pig: 880.0,
+  penguin: 1046.5,
+  monkey: 1174.66,
+  fox: 1318.51,
 }
 
 export const ANIMAL_POOL: readonly AnimalDef[] = ANIMAL_IDS.map((id) => ({

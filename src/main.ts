@@ -22,15 +22,11 @@ import { localStorageStore } from './ui/storage'
 import type { Timer } from './ui/timer'
 
 /**
- * Survivable boot — issue #23, and the composition root.
+ * Composition root. It is the only module that touches the screen, the clock and real randomness:
+ * the core decides, and here that decision becomes a sound, a movement and a saved level.
  *
- * A force-close on the tablet leaves nothing behind: there is no console in standalone mode, and the
- * process dies before anything is on screen. So every step is recorded to the persisted trace before
- * it runs, and nothing here throws. A failure renders the plain fallback panel instead, which is what
- * makes the trace readable on the next launch.
- *
- * This is also the only file that touches the screen, the clock, and real random numbers (SPEC §15):
- * the core decides a settle, and here it becomes a sound, a movement, and a saved level.
+ * A force-close on the tablet leaves no console, so every step is recorded to the persisted trace
+ * before it runs and nothing here throws; a failure renders the plain fallback panel instead.
  */
 
 const log = createBootLog()
@@ -39,10 +35,8 @@ const store = localStorageStore()
 log.step('boot')
 log.step(log.storageAvailable() ? 'storage ok' : 'storage unavailable')
 
-// Recorded first, because these are the only facts a force-close leaves behind that can be read
-// without a screen: Chrome uses one profile for both the browser and the installed app, so the
-// browser's `?debug=1` boot row shows the standalone run's trace (issue #23). The engine token is
-// how we tell the two apart — standalone gets the System WebView, not the browser build.
+// Chrome shares one profile between the browser and the installed app, so a `?debug=1` visit can
+// read the standalone run's trace. The engine token is how the two are told apart.
 log.step(`engine ${engineToken(navigator.userAgent)}`)
 log.step(
   `capabilities: ${capabilityFlags({
@@ -65,15 +59,8 @@ if (app === null) {
   }
 }
 
-/**
- * Offline install — issue #23. The worker is hand-written (`src/sw.ts`) and `scripts/offline.ts` builds
- * it with this build's file list, so after it installs the game needs nothing from the network.
- *
- * Registered on `load`, so the install does not compete with the first frame for the tablet's
- * connection, and in a build only, because the dev server has no worker to serve. A failure is
- * recorded rather than thrown: there is no console on the tablet, and the trace is what gets read on
- * the next launch.
- */
+// Registered on `load` so the install does not compete with the first frame, and in a build only,
+// because the dev server has no worker to serve.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js', { scope: './' }).catch((error: unknown) => {
@@ -88,17 +75,13 @@ function start(root: HTMLElement): void {
   installKidProofing()
   log.step('kid-proofing')
 
-  // SPEC §14.1: a save is the level, and a save we cannot trust is no save at all. The session seed
-  // comes from the save when there is one, so a resumed level regenerates the same board and the same
-  // goal animals (SPEC §9.2) — which is what makes a tablet report mean anything.
+  // A save we cannot trust is no save at all. Its session seed keeps a resumed level on the same
+  // board and goal animals.
   const saved = readSave(store)
   const pool = ANIMAL_POOL.map((animal) => animal.id)
   const sessionSeed = saved === null ? randomSeed() : saved.sessionSeed
   const rng = createRng(sessionSeed)
 
-  // The run is one module now: the level, the mute, the completion count, the tap queue and the party
-  // flag live in `game/session.ts`, and this file only renders what it decides. The write is the one
-  // side effect, and it is the same codec every path uses (SPEC §14.1, issue #17).
   const session = createLevelSession({
     saved,
     sessionSeed,
@@ -110,11 +93,10 @@ function start(root: HTMLElement): void {
   })
   log.step(saved === null ? `level ${session.state().level}` : `resumed level ${session.state().level}`)
 
-  // SPEC §10: the party is an overlay over the board, not a band below it, so the board stays visible
-  // under the dim. The celebration module measures the rect its root element covers, which is why the
-  // party element has to live inside the board area.
-  const boardArea = block('board-area')
-  const party = block('celebration')
+  // The party is an overlay over the board rather than a band below it, so the board stays visible
+  // under the dim. The celebration measures the rect its root element covers.
+  const boardArea = divWithClass('board-area')
+  const party = divWithClass('celebration')
   party.hidden = true
   boardArea.append(party)
   root.append(boardArea)
@@ -124,8 +106,6 @@ function start(root: HTMLElement): void {
 
   const view = createBoardView({
     onTap: enqueueTap,
-    // SPEC §8.1: the view needs the goals so it can mark a goal animal that is in a legal group; the
-    // core has already decided, so this only reports (issue #48).
     goals: () => session.state().goals,
   })
   boardArea.append(view.element)
@@ -133,9 +113,6 @@ function start(root: HTMLElement): void {
 
   const player = createSynthPlayer()
 
-  // Issue #17: the run owns the mute, so the toggle is one command on the session rather than a save
-  // the toggle writes beside the game. The controller still restores from the save, because the game
-  // has to know the state before anything can sound (SPEC §11).
   const mute = createMuteController({
     player,
     saved,
@@ -144,15 +121,10 @@ function start(root: HTMLElement): void {
   mountMuteToggle(panel.element, mute)
   log.step('mute')
 
-  // SPEC §14.2 (issue #16): the level numeral is the long-press target. The rules are in game/, so
-  // this is only the pointer handling, the shake, and the glyph.
   mountAdultReset(panel.levelElement, {
     clock: { now: () => Date.now() },
     timer: timer(),
     onReset: () => {
-      // Issue #16: a reset is only a reset once it is written, which `session.reset()` does. Issue #11:
-      // the reset is a level change, so anything still queued goes with it, and the board is dealt
-      // again rather than left as the wiped one was.
       celebration.stop()
       party.hidden = true
       const state = session.reset()
@@ -164,15 +136,9 @@ function start(root: HTMLElement): void {
     },
   })
 
-  // SPEC §13: the layout is computed before the overlay is mounted, because the overlay reports the cell
-  // the layout produced - that number is issue #10's device measurement. `layout` is reassigned on rotation.
   let layout = applyLayout(root, viewport(), { rows: GRID, cols: GRID })
-  // Feature-detected once: the environment rows are read from the same probe the reduced-motion rules use.
   const media = hasMatchMedia(window) ? window : null
 
-  // The only debugging channel we can rely on once installed (SPEC §14.3). It is mounted with the run's
-  // first snapshot and re-reported from one place afterwards, because the rows are formatting decisions
-  // that belong with the overlay rather than ten calls scattered through this file (issue #18).
   const debug = parseDebugFlag(window.location.search)
     ? mountDebugOverlay(
         document.body,
@@ -188,8 +154,8 @@ function start(root: HTMLElement): void {
     : null
   log.step(debug === null ? 'debug off' : 'debug overlay')
 
-  // Issue #18: the last error row has to catch a thrown error and an unhandled rejection alike. The boot
-  // log is what survives a force-close on an installed PWA, so both channels get the same message.
+  // A thrown error and an unhandled rejection take the same message, because both have to survive
+  // a force-close on the tablet.
   const showError = (message: string): void => {
     log.error(message)
     if (debug !== null) debug.reportError(message)
@@ -203,18 +169,14 @@ function start(root: HTMLElement): void {
     onFirstBalloon: () => log.step('first balloon'),
     onPlayReady: () => log.step('play arrow'),
     onPlay: nextLevel,
-    // Issue #34: the celebration asks the placement rule for the bunch, and the rule reads the board through
-    // these. Both are read on every set and on every rotation, so a turn mid-party hangs the balloons on the
-    // board the game has now rather than the one the party started on.
     metrics: () => bunchMetricsFor(layout.boardPx, layout.balloonPx, layout.arrowBandPx),
     boardOrigin: () => ({ x: layout.boardOffsetXPx, y: layout.boardOffsetYPx }),
     timer: timer(),
   })
 
   // The overlay measures frames itself, because the game is the only thing that knows which frames
-  // it is spending (SPEC §10.2, issue #18). No overlay means no sampling loop. The celebration rows are
-  // reported here too: they change while the party runs, so reporting them only on `showLevel` left the
-  // balloon, particle and tier rows showing the values from before the party started.
+  // it is spending. No overlay means no sampling loop. The party rows are reported here too, since
+  // they change while the party runs.
   if (debug !== null) {
     let lastLive = 0
     const sample = (now: number): void => {
@@ -229,27 +191,24 @@ function start(root: HTMLElement): void {
   }
 
   window.addEventListener('resize', () => {
-    // Issue #19: a turn mid-level keeps the state, and the layout has to be playable straight away. The
-    // canvas is sized from the rect the party covers, so rotation also has to resize it. The overlay's
-    // cell and viewport rows read the layout, so the same report that the rest of the run uses updates them.
+    // A turn keeps the state. The overlay's rect changes with the board, so it has to be resized
+    // after the new layout is applied, and the same report updates the overlay's rows.
     layout = applyLayout(root, viewport(), { rows: GRID, cols: GRID })
     celebration.resize()
     report()
   })
 
-  // The first frame is the deal, and the window the session opened at construction is what made a tap
-  // during it wait rather than run against a board that is still appearing.
+  // The first frame is the deal. The session opened its window at construction, so a tap during it
+  // waits rather than running against a board that is still appearing.
   void view
     .renderInitial(session.state().board)
     .then(() => {
       log.step('first frame')
       showLevel()
-      // SPEC §14.1: a level resumes exactly as it was left. A save written after the goals hit zero is a
-      // party she has not tapped the play arrow on yet, so the party opens again rather than leaving a
-      // finished board with no party and no arrow. The run that completed the level already counted it.
+      // A save written after the goals hit zero is a party she has not left yet, so it opens again.
       if (session.restoreParty()) showParty()
       const next = session.settle()
-      if (next !== null) void runPlan(next)
+      if (next !== null) void applyTapPlan(next)
     })
     .catch((error: unknown) => {
       showError(describeError(error))
@@ -258,32 +217,28 @@ function start(root: HTMLElement): void {
 
   function enqueueTap(index: number): void {
     player.unlock()
-    // SPEC §10: the board is inert while the party is showing, apart from the celebration's own
-    // interactions. The session answers `blocked` and the tap goes no further (SPEC §7.5).
+    // The board is inert while the party shows, apart from the celebration's own interactions.
     const plan = session.beginTap(index)
     if (plan.firstTap) log.step('first tap')
     report()
-    if (plan.result !== null) void runPlan(plan)
+    if (plan.result !== null) void applyTapPlan(plan)
   }
 
   /** Render one settle the session already decided and wrote. */
-  async function runPlan(plan: TapPlan): Promise<void> {
+  async function applyTapPlan(plan: TapPlan): Promise<void> {
     const result = plan.result
     if (result === null) return
 
     try {
-      // Issue #8: the panel is rendered before the pop is animated, so the bubble that pays for this
-      // tap sparkles in the same frame as the pop, and the screen cannot show a state the save has
-      // already left behind.
+      // The panel is rendered before the pop is animated, so the bubble that pays for this tap
+      // sparkles in the same frame as the pop.
       showLevel()
 
       if (result.group !== null) {
-        playTap(result)
+        playTapSounds(result)
         await view.animatePop(popForView(result))
-        // SPEC §7.4: the dead board is the core's decision, but the board on screen has to become the
-        // board in the save. Without this step the view kept the *settled* board while `state` held the
-        // reshuffled one, so the next tap was decided against tiles she could not see. The whoosh belongs
-        // to this animation, not to the pop that preceded it.
+        // The core's reshuffled board has to reach the screen too, or the next tap would be decided
+        // against tiles she cannot see. The whoosh belongs to this animation, not to the pop.
         if (result.reshuffled !== null) {
           player.playReshuffle()
           await view.animateReshuffle(result.reshuffled)
@@ -293,25 +248,22 @@ function start(root: HTMLElement): void {
         player.playInvalid()
       }
 
-      // If the crash happens on the first interaction, the trace shows how far we got.
       if (plan.firstPop) log.step('first pop')
 
-      // SPEC §8.1: both goals at zero is the win, and the party is what is left on the rack.
       if (plan.party) showParty()
     } catch (error) {
       log.error(describeError(error))
     } finally {
-      // The settle is over, so the queue may release the next tap. It is resolved against the board the
-      // settle made - not the one she tapped on (SPEC §7.5).
+      // The settle is over, so the queue may release the next tap against the board it made.
       const next = session.settle()
-      if (next !== null) void runPlan(next)
+      if (next !== null) void applyTapPlan(next)
     }
   }
 
-  function playTap(result: TapResult): void {
+  function playTapSounds(result: TapResult): void {
     const group = result.group
     if (group === null) return
-    // SPEC §11: the bubble that leaves the rack has its own tick, distinct from an animal pop.
+    // The bubble that leaves the rack has its own tick, distinct from an animal pop.
     if (result.bubbleSpent) player.playBubble()
     player.playPop(group.animal, group.cells.length)
   }
@@ -328,13 +280,7 @@ function start(root: HTMLElement): void {
     }
   }
 
-  /**
-   * Every live row is painted from one value, so a row cannot lag the state it describes.
-   *
-   * The party rows are `null` while the party is not on screen, which is a different thing from a party
-   * that has popped nothing: the overlay says `not running` rather than `0 fps tier`. The trace and the
-   * fps row do not come from here - the log pushes and the overlay samples its own frames.
-   */
+  /** Paint every live row from one value, so a row cannot lag the state it describes. */
   function report(): void {
     if (debug === null) return
     debug.report({
@@ -356,7 +302,7 @@ function start(root: HTMLElement): void {
     report()
   }
 
-  /** SPEC §10.1: the party is the rack, and it is the only thing that plays the completion cue. */
+  /** The party is the rack, and it is the only thing that plays the completion cue. */
   function showParty(): void {
     log.step(`party ${partySize(session.state()).tier}`)
     party.hidden = false
@@ -375,9 +321,7 @@ function start(root: HTMLElement): void {
   }
 }
 
-/** The frame tier and the live counts reach the overlay through the snapshot `report()` builds. */
-
-function block(className: string): HTMLElement {
+function divWithClass(className: string): HTMLElement {
   const element = document.createElement('div')
   element.className = className
   return element
@@ -387,7 +331,7 @@ function viewport(): Viewport {
   return { width: window.innerWidth, height: window.innerHeight }
 }
 
-/** The clock and the timer come in as seams (SPEC §15), so nothing in game/ assumes a browser. */
+/** The clock and the timer come in as seams, so nothing in game/ assumes a browser. */
 function timer(): Timer {
   return {
     after: (ms: number, run: () => void): number => window.setTimeout(run, ms),
@@ -395,7 +339,7 @@ function timer(): Timer {
   }
 }
 
-/** Feature-detected: older WebViews do not always provide `crypto.getRandomValues` (issue #23). */
+/** Older WebViews do not always provide `crypto.getRandomValues`. */
 function randomSeed(): number {
   if (hasRandomValues(window.crypto)) {
     log.step('random: crypto')
